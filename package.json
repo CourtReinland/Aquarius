@@ -1,0 +1,16 @@
+{
+  "name": "aquarius",
+  "private": true,
+  "description": "Community governance platform - what Bitcoin is to money, Aquarius is to community",
+  "scripts": {
+    "mobile": "pnpm --filter @aquarius/mobile start",
+    "api": "pnpm --filter @aquarius/api dev",
+    "contracts:build": "cd packages/contracts && forge build",
+    "contracts:test": "cd packages/contracts && forge test",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

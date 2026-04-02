@@ -1,0 +1,25 @@
+node_modules/
+.env
+.env.local
+dist/
+build/
+out/
+.expo/
+*.tsbuildinfo
+
+# Foundry
+packages/contracts/cache/
+packages/contracts/out/
+packages/contracts/broadcast/
+
+# Rust
+packages/services/target/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
