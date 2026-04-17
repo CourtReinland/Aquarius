@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <include path="file:///data/data/com.aquarius/files" />
+        <exclude path="file:///data/data/com.aquarius/cache" />
+    </cloud-backup>
+    <device-transfer>
+        <include path="file:///data/data/com.aquarius/files" />
+        <exclude path="file:///data/data/com.aquarius/cache" />
+    </device-transfer>
+</data-extraction-rules>

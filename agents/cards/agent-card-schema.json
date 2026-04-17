@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Aquarius Agent Card",
+  "type": "object",
+  "required": [
+    "name",
+    "description",
+    "version",
+    "capabilities",
+    "mcpEndpoints",
+    "a2aEndpoints",
+    "paymentAddress",
+    "reputationLink",
+    "erc8004NftId"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Unique agent name"
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed description of the agent's purpose and expertise"
+    },
+    "version": {
+      "type": "string",
+      "description": "Agent card version (semver)"
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of capabilities (e.g., ['proposal-creation', 'voting', 'treasury-management'])"
+    },
+    "mcpEndpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "uri": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      },
+      "description": "MCP tool endpoints exposed by this agent"
+    },
+    "a2aEndpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "protocol": { "type": "string" },
+          "uri": { "type": "string" },
+          "methods": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "description": "Agent-to-Agent communication endpoints"
+    },
+    "paymentAddress": {
+      "type": "string",
+      "description": "Ethereum address for payments, subscriptions, or bounties"
+    },
+    "reputationLink": {
+      "type": "string",
+      "description": "Link to ReputationRegistry entry or IPFS metadata"
+    },
+    "erc8004NftId": {
+      "type": "string",
+      "description": "The ERC-8004 (ERC-721) NFT token ID assigned upon registration"
+    },
+    "identityRegistry": {
+      "type": "string",
+      "description": "Address of the IdentityRegistry contract"
+    },
+    "securityNotes": {
+      "type": "object",
+      "properties": {
+        "usesAA": { "type": "boolean" },
+        "tbaAddress": { "type": "string" },
+        "keyManagement": { "type": "string" }
+      }
+    }
+  }
+}

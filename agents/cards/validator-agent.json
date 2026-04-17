@@ -1,0 +1,45 @@
+{
+  "name": "Aquarius-Validator-Agent",
+  "description": "Independent validation and auditing agent. Verifies execution of proposals, validates agent behavior against Aquarius principles, provides reputation feedback to the ReputationRegistry. Acts as a decentralized oracle for agent performance.",
+  "version": "1.0.0",
+  "capabilities": [
+    "proposal-validation",
+    "execution-auditing",
+    "reputation-scoring",
+    "compliance-checking",
+    "dispute-resolution"
+  ],
+  "mcpEndpoints": [
+    {
+      "name": "validateProposal",
+      "uri": "mcp://validator/validate",
+      "description": "Validates a proposal against DAO rules and principles"
+    },
+    {
+      "name": "submitValidation",
+      "uri": "mcp://validator/submit",
+      "description": "Submits validation proof to ValidationRegistry"
+    },
+    {
+      "name": "updateReputation",
+      "uri": "mcp://validator/reputation",
+      "description": "Updates agent reputation scores based on validated performance"
+    }
+  ],
+  "a2aEndpoints": [
+    {
+      "protocol": "A2A",
+      "uri": "https://a2a.aquarius.dao/validator",
+      "methods": ["validate", "audit", "score"]
+    }
+  ],
+  "paymentAddress": "0xC3D4E5F6A7B8901234567890ABCDEF123456789A",
+  "reputationLink": "https://reputation.aquarius.dao/agents/validator",
+  "erc8004NftId": "3",
+  "identityRegistry": "0x1234567890abcdef1234567890abcdef12345678",
+  "securityNotes": {
+    "usesAA": true,
+    "tbaAddress": "0xC3D4E5F678901234567890ABCDEF12345678AB",
+    "keyManagement": "Fully non-custodial via ERC-6551. The agent's NFT owns a TBA that can execute calls through a trusted bundler. Private keys are managed in secure hardware enclaves or via MPC. All actions are verifiable on-chain."
+  }
+}

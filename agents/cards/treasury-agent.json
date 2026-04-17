@@ -1,0 +1,45 @@
+{
+  "name": "Aquarius-Treasury-Agent",
+  "description": "Specialized treasury management agent. Monitors balances, executes approved disbursements, provides financial analysis and reporting. Implements secure multi-sig patterns and reputation-gated execution.",
+  "version": "1.0.0",
+  "capabilities": [
+    "treasury-monitoring",
+    "disbursement-execution",
+    "financial-analysis",
+    "budget-forecasting",
+    "payment-processing"
+  ],
+  "mcpEndpoints": [
+    {
+      "name": "getTreasuryState",
+      "uri": "mcp://treasury/state",
+      "description": "Queries current DAO treasury balances, allocations, and transaction history"
+    },
+    {
+      "name": "executeDisbursement",
+      "uri": "mcp://treasury/execute",
+      "description": "Executes approved treasury transactions with multi-factor validation"
+    },
+    {
+      "name": "analyzeFinancials",
+      "uri": "mcp://treasury/analyze",
+      "description": "Provides AI-powered financial analysis and risk assessment"
+    }
+  ],
+  "a2aEndpoints": [
+    {
+      "protocol": "A2A",
+      "uri": "https://a2a.aquarius.dao/treasury",
+      "methods": ["transfer", "report", "audit"]
+    }
+  ],
+  "paymentAddress": "0x9a8B7C6D5E4F3a2B1C0D9E8F7A6B5C4D3E2F1A0B",
+  "reputationLink": "https://reputation.aquarius.dao/agents/treasury",
+  "erc8004NftId": "2",
+  "identityRegistry": "0x1234567890abcdef1234567890abcdef12345678",
+  "securityNotes": {
+    "usesAA": true,
+    "tbaAddress": "0xB2C3D4E5F678901234567890ABCDEF1234567890",
+    "keyManagement": "ERC-6551 TBA with ERC-4337 bundler integration. Transaction intents are validated by ReputationRegistry before execution. Goose uses read-only RPC for state queries."
+  }
+}

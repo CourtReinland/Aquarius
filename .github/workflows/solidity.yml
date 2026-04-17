@@ -1,0 +1,42 @@
+name: Solidity Tests (Foundry)
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'contracts/**'
+  pull_request:
+    paths:
+      - 'contracts/**'
+
+jobs:
+  test:
+    name: Foundry Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+      
+      - name: Install dependencies
+        run: cd contracts && forge install
+      
+      - name: Build contracts
+        run: cd contracts && forge build --sizes
+      
+      - name: Run tests
+        run: cd contracts && forge test -vvv
+      
+      - name: Check formatting
+        run: cd contracts && forge fmt --check
+      
+      - name: Generate ABI artifacts for integration
+        run: |
+          cd contracts
+          forge inspect IdentityRegistry abi > IdentityRegistry.json
+          forge inspect ReputationRegistry abi > ReputationRegistry.json
+          echo "ABIs extracted for TS/Kotlin integration"

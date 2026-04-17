@@ -1,0 +1,45 @@
+{
+  "name": "Aquarius-Governance-Agent",
+  "description": "Autonomous agent specialized in DAO governance. Creates, analyzes, and manages proposals. Ensures alignment with Aquarius principles of hybrid human-AI collaboration. Uses reputation-weighted voting logic.",
+  "version": "1.0.0",
+  "capabilities": [
+    "proposal-creation",
+    "proposal-analysis",
+    "voting-execution",
+    "governance-simulation",
+    "reputation-assessment"
+  ],
+  "mcpEndpoints": [
+    {
+      "name": "createProposal",
+      "uri": "mcp://governance/create",
+      "description": "Creates a new DAO proposal with AI-generated description and parameters"
+    },
+    {
+      "name": "analyzeProposal",
+      "uri": "mcp://governance/analyze",
+      "description": "Analyzes existing proposals for risks, benefits, and alignment"
+    },
+    {
+      "name": "castVote",
+      "uri": "mcp://governance/vote",
+      "description": "Casts a vote on a proposal after reputation and permission checks"
+    }
+  ],
+  "a2aEndpoints": [
+    {
+      "protocol": "A2A",
+      "uri": "https://a2a.aquarius.dao/governance",
+      "methods": ["propose", "vote", "queryStatus"]
+    }
+  ],
+  "paymentAddress": "0x7F4B6b9c8e3a1F2b5D7e9c0a1B2d3e4F5a6B7c8D",
+  "reputationLink": "https://reputation.aquarius.dao/agents/governance",
+  "erc8004NftId": "1",
+  "identityRegistry": "0x1234567890abcdef1234567890abcdef12345678",
+  "securityNotes": {
+    "usesAA": true,
+    "tbaAddress": "0xA1B2C3D4E5F678901234567890ABCDEF12345678",
+    "keyManagement": "Uses ERC-6551 token-bound account controlled via Account Abstraction (ERC-4337). No private keys stored in Goose runtime. All transactions signed via secure session keys or hardware modules."
+  }
+}
