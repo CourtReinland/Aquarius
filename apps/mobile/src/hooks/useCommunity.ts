@@ -3,7 +3,7 @@ import {
   http,
   type Address,
 } from 'viem';
-import { baseSepolia } from 'viem/chains';
+import { defaultChain } from '../config/chains';
 import { communityAbi } from '../config/abis';
 
 /**
@@ -11,7 +11,7 @@ import { communityAbi } from '../config/abis';
  */
 
 const publicClient = createPublicClient({
-  chain: baseSepolia,
+  chain: defaultChain,
   transport: http(),
 });
 

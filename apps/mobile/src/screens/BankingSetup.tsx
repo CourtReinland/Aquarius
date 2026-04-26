@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Switch,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 // Slider replaced with custom button-based selector (no external dep needed)
 
 /**
@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
  */
 
 export function BankingSetup() {
+  const insets = useSafeAreaInsets();
   const [tokenAmount, setTokenAmount] = useState('33000000');
   const [bankingStyle, setBankingStyle] = useState<'austrian' | 'keynesian'>('austrian');
   const [allowArbitrary, setAllowArbitrary] = useState(false);
@@ -24,8 +25,13 @@ export function BankingSetup() {
   const [leverageRatio, setLeverageRatio] = useState(1);
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingBottom: 100 + insets.bottom },
+        ]}
+      >
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Banking Setup</Text>
@@ -128,7 +134,12 @@ export function BankingSetup() {
       </ScrollView>
 
       {/* Deploy button */}
-      <View style={styles.footer}>
+      <View
+        style={[
+          styles.footer,
+          { paddingBottom: 16 + insets.bottom },
+        ]}
+      >
         <TouchableOpacity style={styles.deployButton}>
           <Text style={styles.deployButtonText}>Deploy Community Bank</Text>
         </TouchableOpacity>
@@ -191,7 +202,10 @@ const styles = StyleSheet.create({
   summaryItem: { color: '#C9D1D9', fontSize: 13, fontFamily: 'monospace' },
   footer: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    padding: 16, backgroundColor: '#0D1117', borderTopWidth: 1, borderTopColor: '#30363D',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
+    backgroundColor: '#0D1117', borderTopWidth: 1, borderTopColor: '#30363D',
   },
   deployButton: { backgroundColor: '#4ECDC4', padding: 16, borderRadius: 10, alignItems: 'center' },
   deployButtonText: { color: '#0D1117', fontSize: 16, fontWeight: '700' },

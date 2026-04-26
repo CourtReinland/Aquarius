@@ -103,7 +103,7 @@ function MainTabs() {
       />
       <Tab.Screen
         name="Profile"
-        component={CommunityDashboard as any}
+        component={CommunityDashboard}
         options={{
           title: 'My Memberships',
           tabBarIcon: ({ focused }) => <TabIcon label="Profile" focused={focused} />,

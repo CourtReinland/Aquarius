@@ -7,14 +7,14 @@ import {
   parseEther,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { baseSepolia } from 'viem/chains';
+import { defaultChain } from '../config/chains';
 import { governanceModuleAbi } from '../config/abis';
 
 /**
  * Hooks for interacting with the GovernanceModule contract.
  */
 
-const chain = baseSepolia;
+const chain = defaultChain;
 const publicClient = createPublicClient({ chain, transport: http() });
 
 // ─── Types ────────────────────────────────────────────────────────

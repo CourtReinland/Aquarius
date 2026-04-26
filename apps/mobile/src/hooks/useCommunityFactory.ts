@@ -7,7 +7,7 @@ import {
   type Hash,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { baseSepolia } from 'viem/chains';
+import { defaultChain } from '../config/chains';
 import { communityFactoryAbi } from '../config/abis';
 import { CONTRACT_ADDRESSES } from '../config/chains';
 import type { CommunityWizardState } from '../types/community';
@@ -20,7 +20,7 @@ import type { CommunityWizardState } from '../types/community';
  * once WalletConnect/Privy is integrated.
  */
 
-const chain = baseSepolia;
+const chain = defaultChain;
 
 const publicClient = createPublicClient({
   chain,

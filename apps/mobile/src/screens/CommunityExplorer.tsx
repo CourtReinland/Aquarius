@@ -1,262 +1,167 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, lazy, Suspense } from 'react';
 import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  TextInput,
-  Platform,
-  Dimensions,
+  View, Text, FlatList, TouchableOpacity, StyleSheet,
+  TextInput, Platform, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/AppNavigator';
-import {
-  ExplorerScene,
-  type CommunityNode,
-} from '../components/explorer3d/ExplorerScene';
+import { useBlockchain } from '../context/BlockchainContext';
+import type { CommunityNode } from '../components/explorer3d/ExplorerScene';
 
-/**
- * Community Explorer - the main discovery screen.
- *
- * Two modes:
- * 1. 3D View: Floating islands in a cosmic space (default on capable devices)
- * 2. Grid View: 2D card grid fallback (list mode or low-end devices)
- *
- * Matches mockup 00comexplorer.svg:
- * - "Community Explorer" header with search
- * - MY MEMBERSHIPS section
- * - TRENDING COMMUNITIES section
- * - CURRENTLY OPEN COMMUNITIES section
- * - CREATE + button
- * - Bottom nav bar (handled by tab navigator)
- */
-
-// Sample data - will be replaced with blockchain reads
-const SAMPLE_COMMUNITIES: CommunityNode[] = [
-  { id: '1', name: 'Alpha Centauri', memberCount: 67, address: '0x1', category: 'membership' },
-  { id: '2', name: 'Trantor', memberCount: 142, address: '0x2', category: 'membership' },
-  { id: '3', name: 'Equanimity', memberCount: 31, address: '0x3', category: 'membership' },
-  { id: '4', name: 'Skateville', memberCount: 60, address: '0x4', category: 'trending' },
-  { id: '5', name: 'Brightplace', memberCount: 89, address: '0x5', category: 'trending' },
-  { id: '6', name: 'New Eden', memberCount: 24, address: '0x6', category: 'trending' },
-  { id: '7', name: 'Solarpunk Co', memberCount: 112, address: '0x7', category: 'open' },
-  { id: '8', name: 'The Commons', memberCount: 45, address: '0x8', category: 'open' },
-  { id: '9', name: 'Arcadia', memberCount: 78, address: '0x9', category: 'open' },
-];
+const ExplorerScene = lazy(() =>
+  import('../components/explorer3d/ExplorerScene').then((m) => ({ default: m.ExplorerScene }))
+);
 
 type ViewMode = '3d' | 'grid';
+const INITIAL_MODE: ViewMode = Platform.OS === 'web' ? 'grid' : '3d';
 
 export function CommunityExplorer() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const [viewMode, setViewMode] = useState<ViewMode>('3d');
+  const { myCommunities, allCommunities, loading, refresh } = useBlockchain();
+  const [viewMode, setViewMode] = useState<ViewMode>(INITIAL_MODE);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredCommunities = SAMPLE_COMMUNITIES.filter((c) =>
+  // Split communities into mine vs discoverable
+  const myComms = myCommunities.filter(c =>
     c.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
-
-  const handleSelectCommunity = useCallback(
-    (community: CommunityNode) => {
-      navigation.navigate('CommunityDashboard', { address: community.address });
-    },
-    [navigation]
+  const openComms = allCommunities.filter(c =>
+    !c.isMember && c.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // ─── 3D View ────────────────────────────────────────────────────
+  // Build 3D nodes from real data
+  const communityNodes: CommunityNode[] = [
+    ...myComms.map(c => ({
+      id: c.address, name: c.name, memberCount: c.memberCount,
+      address: c.address, category: 'membership' as const,
+    })),
+    ...openComms.map(c => ({
+      id: c.address, name: c.name, memberCount: c.memberCount,
+      address: c.address, category: 'open' as const,
+    })),
+  ];
 
-  if (viewMode === '3d') {
+  const handleSelectCommunity = useCallback((_community: { address: string }) => {
+    // Navigate to Profile tab (which shows memberships) — stays within tabs
+    navigation.getParent()?.navigate('Profile');
+  }, [navigation]);
+
+  // ─── Empty state ────────────────────────────────────────────────
+  const isEmpty = allCommunities.length === 0 && !loading;
+
+  // ─── 3D View ────────────────────────────────────────────────────
+  if (viewMode === '3d' && communityNodes.length > 0) {
     return (
       <View style={styles.container3d}>
-        {/* 3D Scene fills background */}
-        <ExplorerScene
-          communities={filteredCommunities}
-          onSelectCommunity={handleSelectCommunity}
-        />
-
-        {/* Overlay UI */}
+        <Suspense fallback={
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0E14' }}>
+            <ActivityIndicator size="large" color="#4ECDC4" />
+            <Text style={{ color: '#4ECDC4', marginTop: 12 }}>Loading 3D Explorer...</Text>
+          </View>
+        }>
+          <ExplorerScene communities={communityNodes} onSelectCommunity={handleSelectCommunity} />
+        </Suspense>
         <SafeAreaView style={styles.overlay} pointerEvents="box-none">
-          {/* Header */}
           <View style={styles.overlayHeader} pointerEvents="auto">
             <Text style={styles.headerTitle}>Community Explorer</Text>
-            <View style={styles.headerActions}>
-              <TouchableOpacity
-                style={styles.viewToggle}
-                onPress={() => setViewMode('grid')}
-              >
-                <Text style={styles.viewToggleText}>Grid</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.searchButton}>
-                <Text style={styles.searchIcon}>Q</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity style={styles.viewToggle} onPress={() => setViewMode('grid')}>
+              <Text style={styles.viewToggleText}>Grid</Text>
+            </TouchableOpacity>
           </View>
-
-          {/* Search bar (expandable) */}
-          <View style={styles.overlaySearch} pointerEvents="auto">
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search communities..."
-              placeholderTextColor="#484F58"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-          </View>
-
-          {/* Bottom: stats + create button */}
           <View style={styles.overlayBottom} pointerEvents="auto">
-            <View style={styles.statsRow}>
-              <View style={styles.statBadge}>
-                <Text style={styles.statNumber}>{filteredCommunities.length}</Text>
-                <Text style={styles.statLabel}>Communities</Text>
-              </View>
-              <View style={styles.statBadge}>
-                <Text style={styles.statNumber}>
-                  {filteredCommunities.reduce((sum, c) => sum + c.memberCount, 0)}
-                </Text>
-                <Text style={styles.statLabel}>Total Members</Text>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={styles.createButton}
-              onPress={() => navigation.navigate('FoundCommunity')}
-            >
+            <TouchableOpacity style={styles.createButton} onPress={() => navigation.navigate('FoundCommunity')}>
               <Text style={styles.createButtonText}>CREATE</Text>
               <Text style={styles.createPlus}>+</Text>
             </TouchableOpacity>
-          </View>
-
-          {/* Legend */}
-          <View style={styles.legend} pointerEvents="auto">
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#4ECDC4' }]} />
-              <Text style={styles.legendText}>My Communities</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#7B68EE' }]} />
-              <Text style={styles.legendText}>Trending</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#F0C040' }]} />
-              <Text style={styles.legendText}>Open</Text>
-            </View>
           </View>
         </SafeAreaView>
       </View>
     );
   }
 
-  // ─── Grid View (2D fallback) ────────────────────────────────────
-
-  const myComms = filteredCommunities.filter((c) => c.category === 'membership');
-  const trending = filteredCommunities.filter((c) => c.category === 'trending');
-  const open = filteredCommunities.filter((c) => c.category === 'open');
-
-  const renderCard = ({ item }: { item: CommunityNode }) => (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => handleSelectCommunity(item)}
-    >
-      <View
-        style={[
-          styles.cardImage,
-          {
-            backgroundColor:
-              item.category === 'membership'
-                ? '#1A3A3A'
-                : item.category === 'trending'
-                ? '#2A1A3A'
-                : '#3A3A1A',
-          },
-        ]}
-      >
+  // ─── Grid View ──────────────────────────────────────────────────
+  const renderMyCard = ({ item }: { item: typeof myComms[0] }) => (
+    <TouchableOpacity style={styles.card} onPress={() => handleSelectCommunity(item)}>
+      <View style={[styles.cardImage, { backgroundColor: '#1A3A3A' }]}>
         <Text style={styles.cardInitial}>{item.name[0]}</Text>
+        {item.isFounder && <Text style={styles.founderBadge}>FOUNDER</Text>}
       </View>
-      <Text style={styles.cardName} numberOfLines={1}>
-        {item.name}
-      </Text>
+      <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
       <Text style={styles.cardMembers}>{item.memberCount} members</Text>
     </TouchableOpacity>
   );
 
+  const renderOpenCard = ({ item }: { item: typeof openComms[0] }) => (
+    <View style={styles.card}>
+      <View style={[styles.cardImage, { backgroundColor: '#3A3A1A' }]}>
+        <Text style={styles.cardInitial}>{item.name[0]}</Text>
+      </View>
+      <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+      <Text style={styles.cardMembers}>{item.memberCount} members</Text>
+      <TouchableOpacity style={styles.applyButton}>
+        <Text style={styles.applyButtonText}>Apply to Join</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.containerGrid} edges={['bottom']}>
-      {/* Header */}
       <View style={styles.gridHeader}>
         <Text style={styles.headerTitle}>Community Explorer</Text>
-        <TouchableOpacity
-          style={styles.viewToggle}
-          onPress={() => setViewMode('3d')}
-        >
-          <Text style={styles.viewToggleText}>3D</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Search */}
-      <View style={styles.gridSearch}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search communities..."
-          placeholderTextColor="#484F58"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-      </View>
-
-      {/* Sections */}
-      <View style={{ flex: 1 }}>
-        {myComms.length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>MY MEMBERSHIPS</Text>
-            <FlatList
-              horizontal
-              data={myComms}
-              renderItem={renderCard}
-              keyExtractor={(item) => item.id}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}
-            />
-          </>
-        )}
-
-        {trending.length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>TRENDING COMMUNITIES</Text>
-            <FlatList
-              horizontal
-              data={trending}
-              renderItem={renderCard}
-              keyExtractor={(item) => `t-${item.id}`}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}
-            />
-          </>
-        )}
-
-        {open.length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>CURRENTLY OPEN COMMUNITIES</Text>
-            <FlatList
-              horizontal
-              data={open}
-              renderItem={renderCard}
-              keyExtractor={(item) => `o-${item.id}`}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.horizontalList}
-            />
-          </>
+        {communityNodes.length > 0 && (
+          <TouchableOpacity style={styles.viewToggle} onPress={() => setViewMode('3d')}>
+            <Text style={styles.viewToggleText}>3D</Text>
+          </TouchableOpacity>
         )}
       </View>
 
-      {/* Create button */}
+      <TextInput
+        style={styles.searchInput}
+        placeholder="Search communities..."
+        placeholderTextColor="#484F58"
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+      />
+
+      {loading && (
+        <View style={styles.loadingRow}>
+          <ActivityIndicator color="#4ECDC4" size="small" />
+          <Text style={styles.loadingText}>Fetching from blockchain...</Text>
+        </View>
+      )}
+
+      {isEmpty && (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyTitle}>No Communities Yet</Text>
+          <Text style={styles.emptySubtitle}>Be the first to found one!</Text>
+          <TouchableOpacity style={styles.emptyButton} onPress={() => navigation.navigate('FoundCommunity')}>
+            <Text style={styles.emptyButtonText}>+ Found Community</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {myComms.length > 0 && (
+        <>
+          <Text style={styles.sectionTitle}>MY MEMBERSHIPS ({myComms.length})</Text>
+          <FlatList horizontal data={myComms} renderItem={renderMyCard}
+            keyExtractor={i => i.address} showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalList} />
+        </>
+      )}
+
+      {openComms.length > 0 && (
+        <>
+          <Text style={styles.sectionTitle}>OPEN TO JOIN ({openComms.length})</Text>
+          <FlatList horizontal data={openComms} renderItem={renderOpenCard}
+            keyExtractor={i => `o-${i.address}`} showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalList} />
+        </>
+      )}
+
       <View style={styles.gridFooter}>
-        <TouchableOpacity
-          style={styles.createButton}
-          onPress={() => navigation.navigate('FoundCommunity')}
-        >
+        <TouchableOpacity style={styles.createButton} onPress={() => navigation.navigate('FoundCommunity')}>
           <Text style={styles.createButtonText}>CREATE</Text>
           <Text style={styles.createPlus}>+</Text>
         </TouchableOpacity>
@@ -266,150 +171,35 @@ export function CommunityExplorer() {
 }
 
 const styles = StyleSheet.create({
-  // ─── 3D View ──────────────────────────────────────
   container3d: { flex: 1, backgroundColor: '#0A0E14' },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'space-between',
-    padding: 16,
-  },
-  overlayHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#4ECDC4',
-  },
-  headerActions: { flexDirection: 'row', gap: 8 },
-  viewToggle: {
-    backgroundColor: '#161B2288',
-    borderWidth: 1,
-    borderColor: '#4ECDC4',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  viewToggleText: { color: '#4ECDC4', fontSize: 12, fontWeight: '600' },
-  searchButton: {
-    backgroundColor: '#4ECDC4',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  searchIcon: { color: '#0D1117', fontWeight: '700', fontSize: 14 },
-  overlaySearch: { marginTop: 8 },
-  searchInput: {
-    backgroundColor: '#161B22CC',
-    borderRadius: 10,
-    padding: 12,
-    color: '#E6EDF3',
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: '#30363D',
-  },
-  overlayBottom: {
-    gap: 12,
-  },
-  statsRow: { flexDirection: 'row', gap: 8 },
-  statBadge: {
-    backgroundColor: '#161B22CC',
-    borderRadius: 8,
-    padding: 10,
-    flex: 1,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#30363D',
-  },
-  statNumber: { color: '#4ECDC4', fontSize: 20, fontWeight: '700' },
-  statLabel: { color: '#484F58', fontSize: 10, marginTop: 2 },
-  createButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#161B22CC',
-    borderWidth: 1,
-    borderColor: '#4ECDC4',
-    borderRadius: 10,
-    padding: 14,
-    gap: 8,
-  },
-  createButtonText: {
-    color: '#4ECDC4',
-    fontSize: 14,
-    fontWeight: '600',
-    letterSpacing: 2,
-  },
-  createPlus: {
-    color: '#4ECDC4',
-    fontSize: 20,
-    fontWeight: '700',
-    borderWidth: 1,
-    borderColor: '#4ECDC4',
-    borderRadius: 4,
-    width: 24,
-    height: 24,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  legend: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 16,
-    paddingTop: 8,
-  },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendText: { color: '#484F58', fontSize: 10 },
-
-  // ─── Grid View ────────────────────────────────────
+  overlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'space-between', padding: 16 },
+  overlayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  overlayBottom: { gap: 12 },
   containerGrid: { flex: 1, backgroundColor: '#0D1117', padding: 16 },
-  gridHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  gridSearch: { marginBottom: 16 },
-  sectionTitle: {
-    color: '#8B949E',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 2,
-    marginBottom: 10,
-    marginTop: 8,
-  },
+  gridHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: '#4ECDC4' },
+  viewToggle: { backgroundColor: '#161B2288', borderWidth: 1, borderColor: '#4ECDC4', borderRadius: 6, paddingHorizontal: 12, paddingVertical: 6 },
+  viewToggleText: { color: '#4ECDC4', fontSize: 12, fontWeight: '600' },
+  searchInput: { backgroundColor: '#161B22', borderRadius: 10, padding: 12, color: '#E6EDF3', fontSize: 14, borderWidth: 1, borderColor: '#30363D', marginBottom: 12 },
+  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 },
+  loadingText: { color: '#484F58', fontSize: 13 },
+  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
+  emptyTitle: { color: '#E6EDF3', fontSize: 20, fontWeight: '700', marginBottom: 8 },
+  emptySubtitle: { color: '#484F58', fontSize: 14, marginBottom: 24 },
+  emptyButton: { backgroundColor: '#4ECDC4', paddingHorizontal: 24, paddingVertical: 14, borderRadius: 10 },
+  emptyButtonText: { color: '#0D1117', fontSize: 16, fontWeight: '600' },
+  sectionTitle: { color: '#8B949E', fontSize: 12, fontWeight: '700', letterSpacing: 2, marginBottom: 10, marginTop: 8 },
   horizontalList: { paddingBottom: 12, gap: 12 },
-  card: {
-    width: 140,
-    backgroundColor: '#161B22',
-    borderRadius: 12,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#30363D',
-  },
-  cardImage: {
-    height: 100,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  cardInitial: { fontSize: 36, color: '#4ECDC4', fontWeight: '700' },
-  cardName: {
-    color: '#E6EDF3',
-    fontSize: 13,
-    fontWeight: '600',
-    padding: 8,
-    paddingBottom: 2,
-  },
-  cardMembers: {
-    color: '#484F58',
-    fontSize: 11,
-    paddingHorizontal: 8,
-    paddingBottom: 8,
-  },
+  card: { width: 150, backgroundColor: '#161B22', borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#30363D' },
+  cardImage: { height: 80, justifyContent: 'center', alignItems: 'center' },
+  cardInitial: { fontSize: 32, color: '#4ECDC4', fontWeight: '700' },
+  founderBadge: { position: 'absolute', top: 6, right: 6, backgroundColor: '#4ECDC4', color: '#0D1117', fontSize: 8, fontWeight: '700', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 3, overflow: 'hidden' },
+  cardName: { color: '#E6EDF3', fontSize: 13, fontWeight: '600', padding: 8, paddingBottom: 2 },
+  cardMembers: { color: '#484F58', fontSize: 11, paddingHorizontal: 8, paddingBottom: 4 },
+  applyButton: { backgroundColor: '#0D2D2A', margin: 6, marginTop: 0, padding: 6, borderRadius: 6, alignItems: 'center', borderWidth: 1, borderColor: '#4ECDC4' },
+  applyButtonText: { color: '#4ECDC4', fontSize: 11, fontWeight: '600' },
   gridFooter: { paddingTop: 12 },
+  createButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#161B22CC', borderWidth: 1, borderColor: '#4ECDC4', borderRadius: 10, padding: 14, gap: 8 },
+  createButtonText: { color: '#4ECDC4', fontSize: 14, fontWeight: '600', letterSpacing: 2 },
+  createPlus: { color: '#4ECDC4', fontSize: 20, fontWeight: '700' },
 });

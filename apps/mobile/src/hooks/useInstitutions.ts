@@ -6,10 +6,10 @@ import {
   type Hash,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { baseSepolia } from 'viem/chains';
+import { defaultChain } from '../config/chains';
 import { institutionRegistryAbi } from '../config/abis';
 
-const chain = baseSepolia;
+const chain = defaultChain;
 const publicClient = createPublicClient({ chain, transport: http() });
 
 // ─── Types ────────────────────────────────────────────────────────
