@@ -72,49 +72,91 @@ forge script script/Deploy.s.sol:DeployScript \
 
 After deployment, copy the contract addresses into `apps/mobile/src/config/chains.ts`.
 
+## Platform Architecture
+
+Aquarius runs everywhere from one shared React/TypeScript codebase. The web app is the
+foundation; the mobile and desktop apps are thin native wrappers around it.
+
+```
+                 ┌───────────────────────────────┐
+                 │        @aquarius/web          │  ← fundamental web app
+                 │  (React + viem/wagmi + UI)    │     shipped via Vercel
+                 └──────────────┬────────────────┘
+                                │ shares screens
+            ┌───────────────────┼───────────────────┐
+            ▼                   │                   ▼
+   ┌────────────────┐           │           ┌──────────────────┐
+   │ @aquarius/     │           │           │ @aquarius/       │
+   │ mobile         │           │           │ desktop          │
+   │ (React Native  │           │           │ (Tauri 2 wrap)   │
+   │  + Expo)       │           │           │                  │
+   │ Android → iOS  │           │           │ macOS → Windows  │
+   └────────────────┘           │           └──────────────────┘
+                                ▼
+                     ┌────────────────────┐
+                     │ @aquarius/contracts│  ← Solidity (Foundry)
+                     │ on Base L2         │
+                     └────────────────────┘
+```
+
+| App | Status | Targets (in order) | Tech |
+|---|---|---|---|
+| `apps/web` | 🔨 prototypes done, prod app planned | All browsers | Next.js + viem/wagmi, share via `react-native-web` |
+| `apps/mobile` | ✅ Android shipping on physical Pixel 3a | Android → iOS | React Native + Expo SDK 54 |
+| `apps/desktop` | 🔨 placeholder | macOS → Windows → (Linux) | Tauri 2 (Rust core, web shell) |
+
+Each app has its own `README.md` with details.
+
 ## Project Structure
 
 ```
 aquarius/
-  apps/
-    mobile/                    # React Native + Expo mobile app
-      src/
-        screens/               # 12 screens matching mockups
-        components/
-          explorer3d/          # 3D Community Explorer (React Three Fiber)
-        hooks/                 # 7 blockchain + API interaction hooks
-        config/                # Chain config, contract ABIs, wagmi
-        types/                 # TypeScript domain types
-        navigation/            # Stack + bottom tab navigator
-
-  packages/
-    contracts/                 # Solidity smart contracts (Foundry)
-      src/
-        Community.sol          # Core community: charter, bylaws, members
-        CommunityFactory.sol   # Deploys community instances
-        GovernanceModule.sol   # Proposals, voting, quorum, outcomes
-        TokenModule.sol        # ERC-20 community currency + banking
-        InstitutionRegistry.sol # Institutions, positions, dividends
-        AllianceModule.sol     # Inter-community alliances
-      test/                    # 62 tests across 6 suites
-      script/                  # Deploy scripts
-
-    api/                       # TypeScript API server (Hono)
-      src/
-        routes/                # Health, community, legal endpoints
-        services/              # AI legal generator, charter templates
+├── apps/
+│   ├── web/                  # 🔨 Fundamental web app (the source of truth UI)
+│   │   └── prototypes/       # Standalone HTML mockups from early exploration
+│   ├── mobile/               # ✅ React Native + Expo (Android primary, iOS planned)
+│   │   └── src/
+│   │       ├── screens/      # 12 screens matching the original SVG mockups
+│   │       ├── components/   # WalletConnect + 3D Community Explorer (R3F)
+│   │       ├── hooks/        # Blockchain reads/writes via viem
+│   │       ├── context/      # BlockchainContext (clients + factory address)
+│   │       ├── config/       # Chain config, contract ABIs
+│   │       ├── types/        # TypeScript domain types
+│   │       └── navigation/   # Stack + bottom tabs
+│   └── desktop/              # 🔨 Tauri shell (placeholder)
+│
+├── packages/
+│   ├── contracts/            # Solidity smart contracts (Foundry)
+│   │   ├── src/
+│   │   │   ├── Community.sol           # Core: charter, bylaws, members, AI agents (ERC-8004)
+│   │   │   ├── CommunityFactory.sol    # Deploys community instances
+│   │   │   ├── GovernanceModule.sol    # Proposals, voting, quorum, outcomes
+│   │   │   ├── TokenModule.sol         # ERC-20 community currency + banking
+│   │   │   ├── InstitutionRegistry.sol # Institutions, positions, dividends
+│   │   │   └── AllianceModule.sol      # Inter-community alliances
+│   │   ├── test/             # 62+ tests across 6 suites
+│   │   └── script/           # Deploy scripts
+│   ├── api/                  # TypeScript API server (Hono) — AI legal generation
+│   └── shared/               # Cross-app shared types/utils
+│
+└── docs/                     # Architecture, contracts spec, setup, planning
+    └── notes/                # Working research notes
 ```
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| **Mobile** | React Native, Expo SDK 54, TypeScript |
+| **Web** *(planned)* | Next.js, React 19, TypeScript |
+| **Mobile** | React Native 0.81, Expo SDK 54, TypeScript (Android shipping; iOS planned) |
+| **Desktop** *(planned)* | Tauri 2 (Rust core, web shell) — macOS first, Windows next |
+| **Cross-platform UI** | `react-native-web` (single screen codebase across all three) |
 | **3D Explorer** | React Three Fiber, Three.js, expo-gl |
 | **Navigation** | React Navigation (stack + bottom tabs) |
 | **State** | Zustand (client), TanStack Query (server) |
 | **Blockchain** | Base (Ethereum L2), Solidity 0.8.24, Foundry |
 | **Wallet** | viem, wagmi, WalletConnect v2 |
+| **AI agent identity** | ERC-8004 registry inside each `Community` contract |
 | **API** | Hono, Node.js, TypeScript |
 | **AI** | Claude API (Anthropic) for legal document generation |
 | **Database** | PostgreSQL (planned), IPFS for document storage |
@@ -126,7 +168,7 @@ aquarius/
 | Contract | What it does |
 |----------|-------------|
 | `CommunityFactory` | Deploys new community instances, tracks all communities per founder |
-| `Community` | Stores charter (IPFS hash), bylaws config, member registry, founder list |
+| `Community` | Stores charter (IPFS hash), bylaws config, member registry, founder list, **ERC-8004 AI agent registry** |
 | `GovernanceModule` | Full proposal lifecycle: create, vote (with ETH funding), finalize, cancel, refund |
 | `TokenModule` | ERC-20 with configurable banking: Austrian/Keynesian, leverage ratio, salary distribution |
 | `InstitutionRegistry` | Create institutions, allocate shares, manage positions/roles, distribute dividends |
