@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aquarius Prototype v0.2 — On-Chain Community</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <style>
+        body { background: #0a0a0a; color: #67e8f9; font-family: monospace; }
+        .emulator { border: 2px solid #22d3ee; background: #111; }
+        .log { font-size: 0.75rem; height: 120px; overflow-y: auto; background: #000; padding: 8px; }
+    </style>
+</head>
+<body class="p-6">
+    <div class="max-w-7xl mx-auto">
+        <h1 class="text-5xl font-bold text-center mb-2 text-cyan-400">♒ AQUARIUS v0.2</h1>
+        <p class="text-center text-cyan-300 mb-8">One Community • On-Chain Governance • Human + AI Members (ERC-8004)</p>
+        
+        <div class="grid grid-cols-2 gap-8">
+            <!-- Emulator 1 -->
+            <div class="emulator rounded-3xl p-6">
+                <div class="text-emerald-400 text-sm mb-3">📱 ANDROID EMULATOR A (Human Member)</div>
+                <div id="scene1" style="height: 340px; background: #000;"></div>
+                <div class="log mt-4 text-amber-300" id="log1">Waiting for on-chain events...</div>
+                <button onclick="createProposal(1)"
+                        class="mt-4 w-full bg-cyan-600 hover:bg-cyan-500 py-3 rounded-2xl text-sm">
+                    Create Governance Proposal
+                </button>
+                <button onclick="createSmartProposal()"
+                        class="mt-2 w-full bg-emerald-700 hover:bg-emerald-600 py-3 rounded-2xl text-sm">
+                    Create Smart Proposal (Deploys Contract)
+                </button>
+            </div>
+
+            <!-- Emulator 2 -->
+            <div class="emulator rounded-3xl p-6">
+                <div class="text-violet-400 text-sm mb-3">🤖 ANDROID EMULATOR B (ERC-8004 AI Agent)</div>
+                <div id="scene2" style="height: 340px; background: #000;"></div>
+                <div class="log mt-4 text-amber-300" id="log2">Listening to blockchain state...</div>
+                <button onclick="joinAsAI()" 
+                        class="mt-4 w-full bg-violet-600 hover:bg-violet-500 py-3 rounded-2xl text-sm">
+                    Register as ERC-8004 AI Member
+                </button>
+            </div>
+        </div>
+
+        <div class="mt-8 text-center text-xs text-zinc-500">
+            Shared state is now driven by local blockchain events.<br>
+            Proposal → Approval → Smart Contract execution updates both instances in real time.
+        </div>
+    </div>
+
+    <script>
+        // Simple Three.js scenes for both emulators
+        function initScene(containerId) {
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, 400/340, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({antialias:true});
+            renderer.setSize(400, 340);
+            document.getElementById(containerId).appendChild(renderer.domElement);
+            
+            const geometry = new THREE.IcosahedronGeometry(1.2, 1);
+            const material = new THREE.MeshPhongMaterial({color: 0x67e8f9, emissive: 0x22d3ee});
+            const mesh = new THREE.Mesh(geometry, material);
+            scene.add(mesh);
+            
+            const light = new THREE.PointLight(0xffffff, 1.2);
+            light.position.set(5,5,5);
+            scene.add(light);
+            camera.position.z = 4;
+            
+            let rot = 0;
+            function animate() {
+                requestAnimationFrame(animate);
+                rot += 0.008;
+                mesh.rotation.y = rot;
+                renderer.render(scene, camera);
+            }
+            animate();
+            return {scene, mesh};
+        }
+
+        const sceneA = initScene('scene1');
+        const sceneB = initScene('scene2');
+
+        let proposalCount = 0;
+
+        window.createProposal = function(emulator) {
+            proposalCount++;
+            const msg = `[ON-CHAIN] Proposal #${proposalCount} created and broadcast via event`;
+            document.getElementById('log1').innerHTML += '<br>' + msg;
+            document.getElementById('log2').innerHTML += '<br>' + msg;
+            
+            // Simulate state sync
+            sceneB.mesh.material.color.setHex(0xa78bfa);
+            setTimeout(() => sceneB.mesh.material.color.setHex(0x67e8f9), 800);
+        };
+
+        window.joinAsAI = function() {
+            const agentId = 'did:erc8004:aquarius:bot-' + Date.now().toString(36);
+            const msg1 = `[ON-CHAIN] registerAIAgent(${agentId}) → tx pending...`;
+            document.getElementById('log2').innerHTML += '<br>' + msg1;
+            setTimeout(() => {
+                const msg2 = `[EVENT] AIAgentRegistered(${agentId}) + MemberAdded`;
+                document.getElementById('log2').innerHTML += '<br>' + msg2;
+                document.getElementById('log1').innerHTML += '<br>' + msg2;
+                sceneB.mesh.scale.set(1.4, 1.4, 1.4);
+                setTimeout(() => sceneB.mesh.scale.set(1,1,1), 600);
+            }, 400);
+        };
+
+        let smartCount = 0;
+        window.createSmartProposal = function() {
+            smartCount++;
+            const msg1 = `[ON-CHAIN] createSmartProposal("Deploy Institution #${smartCount}") → bytecode stored`;
+            document.getElementById('log1').innerHTML += '<br>' + msg1;
+            document.getElementById('log2').innerHTML += '<br>' + msg1;
+
+            // Simulate vote + finalize + execute
+            setTimeout(() => {
+                const msg2 = `[EVENT] SmartProposalRegistered(id=${smartCount - 1})`;
+                document.getElementById('log1').innerHTML += '<br>' + msg2;
+                document.getElementById('log2').innerHTML += '<br>' + msg2;
+            }, 300);
+            setTimeout(() => {
+                const msg3 = '[EVENT] ProposalFinalized → Passed';
+                document.getElementById('log1').innerHTML += '<br>' + msg3;
+                document.getElementById('log2').innerHTML += '<br>' + msg3;
+            }, 900);
+            setTimeout(() => {
+                const addr = '0x' + [...Array(40)].map(() => Math.floor(Math.random()*16).toString(16)).join('');
+                const msg4 = `[EVENT] SmartContractDeployed → ${addr}`;
+                document.getElementById('log1').innerHTML += '<br><span style="color:#34d399">' + msg4 + '</span>';
+                document.getElementById('log2').innerHTML += '<br><span style="color:#34d399">' + msg4 + '</span>';
+                sceneA.mesh.material.emissive.setHex(0x34d399);
+                sceneB.mesh.material.emissive.setHex(0x34d399);
+                setTimeout(() => {
+                    sceneA.mesh.material.emissive.setHex(0x22d3ee);
+                    sceneB.mesh.material.emissive.setHex(0x22d3ee);
+                }, 1200);
+            }, 1500);
+        };
+
+        // Auto demo
+        setTimeout(() => createProposal(1), 1800);
+    </script>
+</body>
+</html>

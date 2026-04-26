@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aquarius Live Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        body { font-family: system-ui, sans-serif; }
+        .status-dot { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 p-8">
+    <div class="max-w-6xl mx-auto">
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <h1 class="text-4xl font-bold text-cyan-400">♒ AQUARIUS</h1>
+                <p class="text-zinc-400">Live Agent Dashboard • 2026-04-06</p>
+            </div>
+            <button onclick="refreshDashboard()" 
+                    class="bg-cyan-600 hover:bg-cyan-500 px-6 py-3 rounded-xl font-medium flex items-center gap-2">
+                🔄 Refresh Status
+            </button>
+        </div>
+
+        <div class="grid grid-cols-5 gap-6">
+            <!-- Agent Cards -->
+            <div class="bg-zinc-900 rounded-2xl p-6 border border-zinc-700">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-3 h-3 bg-emerald-500 rounded-full status-dot"></div>
+                    <h3 class="font-semibold">Aquarius-PM</h3>
+                </div>
+                <p class="text-xs text-emerald-400">COMPLETE</p>
+                <p class="text-zinc-500 text-sm mt-2">Phase 1 tickets defined</p>
+            </div>
+            
+            <div class="bg-zinc-900 rounded-2xl p-6 border border-amber-500">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-3 h-3 bg-amber-500 rounded-full status-dot"></div>
+                    <h3 class="font-semibold">Contracts-Solidity</h3>
+                </div>
+                <p class="text-xs text-amber-400">IN PROGRESS</p>
+                <p class="text-zinc-500 text-sm mt-2">SC-001 • Tests + Architecture</p>
+            </div>
+
+            <div class="bg-zinc-900 rounded-2xl p-6 border border-amber-500">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-3 h-3 bg-amber-500 rounded-full status-dot"></div>
+                    <h3 class="font-semibold">UI-ThreeJS</h3>
+                </div>
+                <p class="text-xs text-amber-400">IN PROGRESS</p>
+                <p class="text-zinc-500 text-sm mt-2">React Native + Three.js integration</p>
+            </div>
+
+            <div class="bg-zinc-900 rounded-2xl p-6 border border-zinc-700">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-3 h-3 bg-zinc-400 rounded-full"></div>
+                    <h3 class="font-semibold">BlueOS-Rust</h3>
+                </div>
+                <p class="text-xs text-zinc-400">READY</p>
+                <p class="text-zinc-500 text-sm mt-2">NDK + Android Layer</p>
+            </div>
+
+            <div class="bg-zinc-900 rounded-2xl p-6 border border-zinc-700">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-3 h-3 bg-zinc-400 rounded-full"></div>
+                    <h3 class="font-semibold">Integration</h3>
+                </div>
+                <p class="text-xs text-zinc-400">READY</p>
+                <p class="text-zinc-500 text-sm mt-2">Component mapping</p>
+            </div>
+        </div>
+
+        <div class="mt-10 bg-zinc-900 rounded-3xl p-8">
+            <h2 class="text-xl font-medium mb-6 text-cyan-300">System Flow</h2>
+            <div id="mermaid" class="mermaid">
+                graph TD
+                    PM[PM] --> Contracts[Contracts]
+                    Contracts --> UI[UI Layer]
+                    UI --> BlueOS[BlueOS Rust]
+                    BlueOS --> Integration[Integration Layer]
+                    Integration --> Linear[Linear Tickets]
+            </div>
+        </div>
+
+        <div class="mt-8 text-center text-xs text-zinc-500">
+            Linear CLI: Third-party (use <span class="font-mono text-amber-400">linear auth</span>) • 
+            All 5 agents active • Open this file in any browser
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({ startOnLoad: true });
+        function refreshDashboard() {
+            const dots = document.querySelectorAll('.status-dot');
+            dots.forEach(dot => {
+                dot.style.animation = 'none';
+                setTimeout(() => dot.style.animation = 'pulse 2s infinite', 10);
+            });
+            alert("Dashboard refreshed (static version). Real agent polling coming soon.");
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aquarius Prototype v0.1</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <style>
+        body { margin:0; background:#0a0a1f; color:#0ff; font-family:monospace; overflow:hidden; }
+        #ui { position:absolute; top:20px; left:20px; background:rgba(10,10,30,0.85); padding:20px; border:1px solid #0ff; border-radius:8px; width:320px; }
+        canvas { display:block; }
+        .node { color:#0f0; cursor:pointer; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <h1 style="margin:0 0 16px 0;color:#0ff;">♒ AQUARIUS</h1>
+        <p><strong>Prototype v0.1</strong> — 2026-04-07</p>
+        <p>Community Nodes: <span id="count">7</span></p>
+        <div id="log" style="height:180px;overflow-y:auto;font-size:12px;background:#000;padding:8px;margin-top:12px;"></div>
+        <button onclick="createCommunity()" style="margin-top:12px;background:#0ff;color:#000;padding:8px 16px;border:none;cursor:pointer;">Create Community</button>
+    </div>
+    <script>
+        let scene, camera, renderer, nodes = [];
+        const communities = ["Tokyo", "Berlin", "SF", "NYC", "Cape Town", "Sydney", "Kyoto"];
+        
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({antialias:true});
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+            
+            camera.position.z = 45;
+            
+            // Create floating nodes
+            communities.forEach((name, i) => {
+                const geometry = new THREE.SphereGeometry(2.2, 32, 32);
+                const material = new THREE.MeshPhongMaterial({color: 0x00ffff, emissive: 0x0088aa});
+                const sphere = new THREE.Mesh(geometry, material);
+                sphere.position.x = (Math.random()-0.5)*35;
+                sphere.position.y = (Math.random()-0.5)*35;
+                sphere.position.z = (Math.random()-0.5)*15;
+                sphere.userData = { name };
+                scene.add(sphere);
+                nodes.push(sphere);
+                
+                const light = new THREE.PointLight(0x00ffff, 1.2);
+                light.position.copy(sphere.position);
+                scene.add(light);
+            });
+            
+            const ambient = new THREE.AmbientLight(0x4040ff, 0.6);
+            scene.add(ambient);
+            
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+            
+            animate();
+            log("Prototype initialized. 7 community nodes floating in 3D space.");
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            nodes.forEach(n => {
+                n.rotation.y += 0.008;
+                n.position.y += Math.sin(Date.now()/800)*0.008;
+            });
+            renderer.render(scene, camera);
+        }
+        
+        function log(msg) {
+            const logEl = document.getElementById('log');
+            logEl.innerHTML += '> ' + msg + '<br>';
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+        
+        function createCommunity() {
+            const name = communities[Math.floor(Math.random()*communities.length)];
+            log('ON-CHAIN: Community "' + name + '" created successfully (mock tx)');
+            const colors = [0x00ff88, 0xff00aa, 0x88aaff];
+            nodes[0].material.color.setHex(colors[Math.floor(Math.random()*3)]);
+        }
+        
+        window.onload = init;
+    </script>
+</body>
+</html>

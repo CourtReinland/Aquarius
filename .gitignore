@@ -1,6 +1,12 @@
+# Dependencies
 node_modules/
+
+# Env / secrets
 .env
 .env.local
+.env.*.local
+
+# Build outputs
 dist/
 build/
 out/
@@ -15,11 +21,27 @@ packages/contracts/broadcast/
 # Rust
 packages/services/target/
 
-# IDE
+# Expo native projects (regenerated via `expo prebuild`)
+apps/mobile/android/
+apps/mobile/ios/
+
+# IDE / editor / per-user agent config
 .idea/
 .vscode/
+.claude/
+.obsidian/
 *.swp
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Per-user working notes / supervisor scripts (not part of the repo)
+LOOP_STATUS.txt
+NEXT_PROMPT_KAI.md
+ralph-wiggum-supervisor.js
+ralph-wiggum-supervisor.ts
+run-kai.sh
+run-ralph.sh
+setup-claude-terminals.sh
+create-linear-tickets.sh
