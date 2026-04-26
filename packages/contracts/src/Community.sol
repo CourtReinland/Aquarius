@@ -44,6 +44,24 @@ contract Community {
 
     bool public initialized;
 
+    // ─── ERC-8004 AI Agent Registry ───────────────────────────────────
+    // Lightweight implementation of the ERC-8004 "Trustless Agents" identity
+    // concept: a community maintains its own on-chain list of AI agents that
+    // are members alongside humans. Every state change is broadcast as an
+    // event so off-chain emulators can stay in sync.
+
+    struct AIAgent {
+        address agentAddress;   // Controlling EOA or contract for the agent
+        string agentId;         // ERC-8004 agent identifier (e.g. DID/URI)
+        string metadataURI;     // IPFS/https metadata card
+        uint256 registeredAt;
+        bool active;
+    }
+
+    address[] public aiAgentList;
+    mapping(address => AIAgent) public aiAgents;
+    mapping(address => bool) public isAIAgent;
+
     // ─── Events ───────────────────────────────────────────────────────
 
     event CommunityCreated(string name, address[] founders, uint256 timestamp);
@@ -51,6 +69,14 @@ contract Community {
     event MemberRemoved(address indexed member, uint256 timestamp);
     event BylawsUpdated(uint256 timestamp);
     event CharterUpdated(string newIpfsHash, uint256 timestamp);
+
+    event AIAgentRegistered(
+        address indexed agentAddress,
+        string agentId,
+        string metadataURI,
+        uint256 timestamp
+    );
+    event AIAgentDeactivated(address indexed agentAddress, uint256 timestamp);
 
     // ─── Modifiers ────────────────────────────────────────────────────
 
@@ -151,6 +177,71 @@ contract Community {
         // Note: We don't remove from array to save gas. Use isMember mapping for checks.
 
         emit MemberRemoved(_member, block.timestamp);
+    }
+
+    // ─── ERC-8004 AI Agent Management ─────────────────────────────────
+
+    /**
+     * @notice Register an AI agent as a community member per ERC-8004.
+     * @dev Admission rule is the same as for humans: FoundersOnly or
+     *      FoundersAndMembers. The agent address is also added to the regular
+     *      member set, so it can vote, propose, etc. alongside humans.
+     */
+    function registerAIAgent(
+        address _agentAddress,
+        string calldata _agentId,
+        string calldata _metadataURI
+    ) external {
+        require(_agentAddress != address(0), "Invalid agent address");
+        require(!isAIAgent[_agentAddress], "Agent already registered");
+        require(bytes(_agentId).length > 0, "agentId required");
+
+        if (bylaws.admissionRule == MemberAdmission.FoundersOnly) {
+            require(isFounder[msg.sender], "Only founders can register agents");
+        } else {
+            require(isMember[msg.sender], "Only members can register agents");
+        }
+
+        aiAgents[_agentAddress] = AIAgent({
+            agentAddress: _agentAddress,
+            agentId: _agentId,
+            metadataURI: _metadataURI,
+            registeredAt: block.timestamp,
+            active: true
+        });
+        aiAgentList.push(_agentAddress);
+        isAIAgent[_agentAddress] = true;
+
+        // AI agents are first-class members.
+        if (!isMember[_agentAddress]) {
+            members.push(_agentAddress);
+            isMember[_agentAddress] = true;
+            emit MemberAdded(_agentAddress, block.timestamp);
+        }
+
+        emit AIAgentRegistered(_agentAddress, _agentId, _metadataURI, block.timestamp);
+    }
+
+    /**
+     * @notice Deactivate a registered AI agent. Founder-gated.
+     */
+    function deactivateAIAgent(address _agentAddress) external onlyFounder {
+        require(isAIAgent[_agentAddress], "Not a registered agent");
+        require(aiAgents[_agentAddress].active, "Already inactive");
+
+        aiAgents[_agentAddress].active = false;
+        isMember[_agentAddress] = false;
+
+        emit AIAgentDeactivated(_agentAddress, block.timestamp);
+        emit MemberRemoved(_agentAddress, block.timestamp);
+    }
+
+    function getAIAgents() external view returns (address[] memory) {
+        return aiAgentList;
+    }
+
+    function getAIAgentCount() external view returns (uint256) {
+        return aiAgentList.length;
     }
 
     // ─── View Functions ───────────────────────────────────────────────

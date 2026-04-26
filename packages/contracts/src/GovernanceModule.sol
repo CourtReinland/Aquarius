@@ -89,6 +89,13 @@ contract GovernanceModule {
     mapping(uint256 => mapping(address => Vote)) public votes;
     mapping(uint256 => address[]) public yesVoters;  // Track for share allocation
 
+    // ─── Smart Proposal extension ─────────────────────────────────────
+    // When a proposal passes, if it carries creation bytecode that bytecode
+    // is deployed as a new contract and its address is stored here. This is
+    // the "smart proposal → live institution contract" flow.
+    mapping(uint256 => bytes) public smartProposalBytecode;
+    mapping(uint256 => address) public deployedContracts;
+
     // ─── Events ───────────────────────────────────────────────────────
 
     event ProposalCreated(
@@ -114,6 +121,20 @@ contract GovernanceModule {
         uint256 noVotes,
         uint256 totalFunded
     );
+
+    event SmartProposalRegistered(
+        uint256 indexed proposalId,
+        address indexed proposer,
+        uint256 bytecodeSize
+    );
+
+    event SmartContractDeployed(
+        uint256 indexed proposalId,
+        address indexed deployedAddress,
+        address indexed community
+    );
+
+    event ProposalExecuted(uint256 indexed proposalId);
 
     // ─── Core Functions ───────────────────────────────────────────────
 
@@ -155,7 +176,7 @@ contract GovernanceModule {
         }
 
         require(bytes(_title).length > 0, "Title required");
-        require(_durationSeconds >= 3600, "Min 1 hour duration");
+        require(_durationSeconds >= 300, "Min 5 min duration");
         require(_durationSeconds <= 30 days, "Max 30 day duration");
         require(_quorumPercentage >= 51 && _quorumPercentage <= 100, "Invalid quorum %");
 
@@ -186,6 +207,92 @@ contract GovernanceModule {
             proposalId, _community, msg.sender,
             _title, p.startTime, p.endTime
         );
+    }
+
+    /**
+     * @notice Create a "smart proposal" — a proposal that carries the creation
+     *         bytecode of a contract to deploy if/when it passes.
+     * @dev This is the Aquarius "proposal becomes a live contract" flow. The
+     *      bytecode is stored on-chain alongside the proposal and deployed
+     *      via `executeProposal` after finalization.
+     */
+    function createSmartProposal(
+        address _community,
+        string calldata _title,
+        string calldata _descriptionIpfsHash,
+        QuorumType _quorumType,
+        uint8 _quorumPercentage,
+        uint256 _minimumVoters,
+        uint256 _durationSeconds,
+        uint256 _fundingCostPerYes,
+        uint256 _fundingThreshold,
+        string calldata _institutionName,
+        bytes calldata _bytecode
+    ) external returns (uint256 proposalId) {
+        require(_bytecode.length > 0, "Bytecode required");
+
+        Community community = Community(_community);
+        require(community.initialized(), "Not a valid community");
+        require(community.isMember(msg.sender), "Not a community member");
+
+        (,,,, Community.ProposalPermission whoMayPropose,) = community.bylaws();
+        if (whoMayPropose == Community.ProposalPermission.FoundersOnly) {
+            require(community.isFounder(msg.sender), "Only founders may propose");
+        }
+
+        require(bytes(_title).length > 0, "Title required");
+        require(_durationSeconds >= 300, "Min 5 min duration");
+        require(_durationSeconds <= 30 days, "Max 30 day duration");
+        require(_quorumPercentage >= 51 && _quorumPercentage <= 100, "Invalid quorum %");
+
+        proposalId = nextProposalId++;
+        Proposal storage p = proposals[proposalId];
+        p.id = proposalId;
+        p.proposer = msg.sender;
+        p.title = _title;
+        p.descriptionIpfsHash = _descriptionIpfsHash;
+        p.community = _community;
+        p.quorumType = _quorumType;
+        p.quorumPercentage = _quorumPercentage;
+        p.minimumVoters = _minimumVoters;
+        p.startTime = block.timestamp;
+        p.endTime = block.timestamp + _durationSeconds;
+        p.outcomeType = OutcomeType.ShareOwnership;
+        p.fundingCostPerYes = _fundingCostPerYes;
+        p.fundingThreshold = _fundingThreshold;
+        p.institutionName = _institutionName;
+        p.status = ProposalStatus.Active;
+
+        (string memory name,,,,,) = community.info();
+        p.communityName = name;
+
+        smartProposalBytecode[proposalId] = _bytecode;
+
+        emit ProposalCreated(proposalId, _community, msg.sender, _title, p.startTime, p.endTime);
+        emit SmartProposalRegistered(proposalId, msg.sender, _bytecode.length);
+    }
+
+    /**
+     * @notice Execute a passed smart proposal by deploying its bytecode as
+     *         a live contract. Callable by anyone once the proposal is Passed.
+     */
+    function executeProposal(uint256 _proposalId) external returns (address deployed) {
+        Proposal storage p = proposals[_proposalId];
+        require(p.status == ProposalStatus.Passed, "Proposal not passed");
+        bytes memory code = smartProposalBytecode[_proposalId];
+        require(code.length > 0, "Not a smart proposal");
+        require(deployedContracts[_proposalId] == address(0), "Already executed");
+
+        assembly ("memory-safe") {
+            deployed := create(0, add(code, 0x20), mload(code))
+        }
+        require(deployed != address(0), "Deploy failed");
+
+        deployedContracts[_proposalId] = deployed;
+        p.status = ProposalStatus.Executed;
+
+        emit SmartContractDeployed(_proposalId, deployed, p.community);
+        emit ProposalExecuted(_proposalId);
     }
 
     /**
