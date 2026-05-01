@@ -6,7 +6,7 @@
 ┌─────────────────────────────────────────────────┐
 │           React Native (Expo) Mobile App         │
 │                                                  │
-│  12 Screens  |  3D Explorer (R3F)  |  7 Hooks   │
+│  13 Screens  |  3D Explorer (R3F)  |  Hooks     │
 │              |  Particle Field     |             │
 │              |  Community Islands  |             │
 │                                                  │
@@ -16,9 +16,12 @@
 ┌──────────────▼───────────────────────────────────┐
 │          API Gateway (Hono / TypeScript)          │
 │                                                   │
-│  /api/legal/generate     → Claude API → Markdown  │
+│  /api/legal/generate     → Claude API → Markdown   │
 │  /api/legal/templates    → Template list           │
 │  /api/legal/summarize    → Charter summary         │
+│  /api/auth/challenge     → Wallet login nonce      │
+│  /api/auth/verify        → Signature verification  │
+│  /api/agents/create      → Wallet + agent card     │
 │  /api/communities        → Community CRUD          │
 │  /health                 → Status check            │
 └──────────────────────────────┬────────────────────┘
@@ -55,6 +58,8 @@ Governance, Token, Institution, and Alliance modules are shared singletons that 
 | Share ownership | Legal documents (IPFS) |
 | Institution ownership | Media, notifications |
 | Alliance state | Search indexes |
+| AI-agent registry membership | Agent cards, prompt/runtime config, encrypted keys |
+| Membership/role authority | Short-lived API sessions, local wallet Passport |
 
 ### Key Design Decisions
 
@@ -80,6 +85,7 @@ RootStack
   ├── FoundCommunity (3-step wizard)
   ├── FoundCommunitySuccess
   ├── CommunityDashboard
+  ├── CreateAIAgent
   ├── BankingSetup
   ├── CongratsRole
   ├── ApproveAlliance
@@ -112,6 +118,7 @@ Uses React Three Fiber with:
 | `useInstitutions` | Manage institutions, positions, shares |
 | `useAlliances` | Propose/accept/decline alliances |
 | `useLegalGenerator` | Call API for AI charter generation |
+| `useAgentCreator` | Create agent wallets/cards through the API |
 
 ## API Architecture
 
@@ -138,6 +145,49 @@ Markdown Output → Display in LegalDocViewer
         │
         ▼
 (On approve) → Pin to IPFS → Store CID on-chain
+```
+
+### AI Agent Creation Pipeline
+
+```
+Community Dashboard
+        │
+        ▼
+POST /api/agents/create
+        │
+        ├── Generate EOA wallet
+        ├── Build public ERC-8004-style agent card
+        ├── Store private prompt/runtime config
+        ├── Encrypt private key if AGENT_KEY_ENCRYPTION_SECRET is set
+        │
+        ▼
+Community.registerAIAgent (optional operator tx)
+        │
+        ▼
+Agent appears as a member in Community.sol
+```
+
+Agent cards expose public identity, capabilities, payment address, and future A2A/MCP endpoints. The API does not return private keys to clients. For production, move storage to PostgreSQL/Drizzle and use KMS, Lit Protocol, or ERC-4337 account abstraction instead of process-local key material.
+
+### Wallet-Native Login Pipeline
+
+```
+Connect wallet locally
+        │
+        ▼
+POST /api/auth/challenge
+        │
+        ▼
+Wallet signs SIWE-style message
+        │
+        ▼
+POST /api/auth/verify
+        │
+        ▼
+Short-lived API session + local Aquarius Passport
+        │
+        ▼
+Contracts remain the source of truth for rights
 ```
 
 ### Charter Templates

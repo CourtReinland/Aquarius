@@ -20,7 +20,7 @@ import { createCommunityOnChain } from '../hooks/useCommunityFactory';
 import { useWalletStore } from '../hooks/useWalletStore';
 import { CONTRACT_ADDRESSES, defaultChain } from '../config/chains';
 import { showAlert } from '../utils/alert';
-import { getDevKey } from '../components/WalletConnect';
+import { getDevKey } from '../utils/devWallet';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'FoundCommunity'>;

@@ -28,6 +28,7 @@ export interface MyCommunity {
   isFounder: boolean;
   memberCount: number;
   founderCount: number;
+  aiAgentCount: number;
   charterIpfsHash: string;
   legalFramework: string;
   jurisdiction: string;
@@ -98,12 +99,13 @@ export function useBlockchainData(walletAddress: Address | null) {
 
       for (const addr of allAddresses) {
         try {
-          const [info, isMember, isFounder, memberCount, founderCount] = await Promise.all([
+          const [info, isMember, isFounder, memberCount, founderCount, aiAgentCount] = await Promise.all([
             publicClient.readContract({ address: addr, abi: communityAbi, functionName: 'info' }),
             publicClient.readContract({ address: addr, abi: communityAbi, functionName: 'isMember', args: [walletAddress] }),
             publicClient.readContract({ address: addr, abi: communityAbi, functionName: 'isFounder', args: [walletAddress] }),
             publicClient.readContract({ address: addr, abi: communityAbi, functionName: 'getMemberCount' }),
             publicClient.readContract({ address: addr, abi: communityAbi, functionName: 'getFounderCount' }),
+            publicClient.readContract({ address: addr, abi: communityAbi, functionName: 'getAIAgentCount' }),
           ]);
 
           const [name, charterIpfsHash, legalFramework, jurisdiction, , createdAt] = info as [string, string, string, string, boolean, bigint];
@@ -120,6 +122,7 @@ export function useBlockchainData(walletAddress: Address | null) {
               ...commData,
               isFounder: isFounder as boolean,
               founderCount: Number(founderCount),
+              aiAgentCount: Number(aiAgentCount),
               charterIpfsHash,
               legalFramework,
               jurisdiction,

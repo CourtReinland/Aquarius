@@ -11,6 +11,8 @@ Aquarius lets anyone create a community with its own charter, currency, voting f
 - **Vote on Proposals** — Crowdfunded proposals with majority, supermajority, or minimum-member quorum
 - **Build Institutions** — Pizza shops, schools, cafes — each with shareholders, positions, and dividends
 - **Form Alliances** — Inter-community agreements with shared benefits and mutual rights
+- **Create AI Agents** — Give communities verifiable agent members with wallets, agent cards, and ERC-8004-style registry entries
+- **Wallet-Native Login** — Sign in with an Ethereum wallet instead of a centralized identity server
 - **AI Legal Generation** — Claude API generates real legal documents from your community parameters
 
 ## Quick Start
@@ -40,7 +42,7 @@ forge test
 cd apps/mobile
 npx expo start --web
 
-# Start the API server (for legal document generation)
+# Start the API server (for legal document generation + agent creation)
 cd packages/api
 pnpm dev
 ```
@@ -116,7 +118,7 @@ aquarius/
 │   │   └── prototypes/       # Standalone HTML mockups from early exploration
 │   ├── mobile/               # ✅ React Native + Expo (Android primary, iOS planned)
 │   │   └── src/
-│   │       ├── screens/      # 12 screens matching the original SVG mockups
+│   │       ├── screens/      # 13 screens including the agent-creation flow
 │   │       ├── components/   # WalletConnect + 3D Community Explorer (R3F)
 │   │       ├── hooks/        # Blockchain reads/writes via viem
 │   │       ├── context/      # BlockchainContext (clients + factory address)
@@ -156,7 +158,8 @@ aquarius/
 | **State** | Zustand (client), TanStack Query (server) |
 | **Blockchain** | Base (Ethereum L2), Solidity 0.8.24, Foundry |
 | **Wallet** | viem, wagmi, WalletConnect v2 |
-| **AI agent identity** | ERC-8004 registry inside each `Community` contract |
+| **Login** | SIWE-style wallet signatures + local Aquarius Passport |
+| **AI agent identity** | ERC-8004-style registry inside each `Community` contract + Hono creation endpoint |
 | **API** | Hono, Node.js, TypeScript |
 | **AI** | Claude API (Anthropic) for legal document generation |
 | **Database** | PostgreSQL (planned), IPFS for document storage |
@@ -168,7 +171,7 @@ aquarius/
 | Contract | What it does |
 |----------|-------------|
 | `CommunityFactory` | Deploys new community instances, tracks all communities per founder |
-| `Community` | Stores charter (IPFS hash), bylaws config, member registry, founder list, **ERC-8004 AI agent registry** |
+| `Community` | Stores charter (IPFS hash), bylaws config, member registry, founder list, **ERC-8004-style AI agent registry** |
 | `GovernanceModule` | Full proposal lifecycle: create, vote (with ETH funding), finalize, cancel, refund |
 | `TokenModule` | ERC-20 with configurable banking: Austrian/Keynesian, leverage ratio, salary distribution |
 | `InstitutionRegistry` | Create institutions, allocate shares, manage positions/roles, distribute dividends |
@@ -186,7 +189,7 @@ forge test --match-contract E2E  # Run just the full story test
 
 ## Mobile App Screens
 
-12 screens matching the original SVG mockups:
+13 screens matching the original SVG mockups plus the agent-creation flow:
 
 | Screen | Description |
 |--------|-------------|
@@ -195,6 +198,7 @@ forge test --match-contract E2E  # Run just the full story test
 | **Found Community** | 3-step wizard: name/founders/charter, bylaws, legal nesting |
 | **Success** | Celebration screen after founding on-chain |
 | **My Memberships** | Dashboard with holdings, positions, tokens, upcoming votes |
+| **Create AI Agent** | Community-scoped agent setup with wallet, capabilities, prompt, and registry metadata |
 | **Proposals Tracker** | Active proposals with vote tally bars, timers, vote modal |
 | **Banking Setup** | Token amount, banking style, fractional reserve toggles |
 | **Bi-laws Explorer** | Constitution style, stats, institution tracker, financials |
@@ -244,6 +248,39 @@ curl -X POST http://localhost:3001/api/legal/generate \
     "leverageRatio": 1
   }'
 ```
+
+## AI Agent Creation
+
+The API can create an AI-agent identity for a community:
+
+```bash
+curl -X POST http://localhost:3001/api/agents/create \
+  -H "Content-Type: application/json" \
+  -d '{
+    "communityAddress": "0x0000000000000000000000000000000000000001",
+    "communityName": "Cupcake DAO",
+    "name": "Cupcake DAO Treasurer",
+    "role": "Treasury assistant",
+    "description": "Watches proposals and prepares treasury actions.",
+    "capabilities": ["vote", "chat", "manage-treasury"],
+    "promptTemplate": "Follow community bylaws before taking any action.",
+    "initialFundingEth": "0"
+  }'
+```
+
+Set `AQUARIUS_OPERATOR_PRIVATE_KEY` and `AQUARIUS_RPC_URL` to also register the agent on-chain through `Community.registerAIAgent`. See [docs/AGENTS.md](docs/AGENTS.md) for the current implementation and production runtime path.
+
+## Wallet-Native Login
+
+Aquarius uses a Sign-In with Ethereum style challenge/verify flow:
+
+```bash
+curl -X POST http://localhost:3001/api/auth/challenge \
+  -H "Content-Type: application/json" \
+  -d '{"address":"0x...","chainId":31337,"domain":"Aquarius","uri":"https://aquariusapp.eth"}'
+```
+
+The wallet signs the returned message locally, then `/api/auth/verify` returns a short-lived API session. Memberships, rights, obligations, tokens, and shares still come from contracts. See [docs/IDENTITY.md](docs/IDENTITY.md).
 
 ## The Vision
 

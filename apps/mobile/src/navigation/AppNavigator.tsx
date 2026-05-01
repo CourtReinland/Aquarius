@@ -16,6 +16,7 @@ import { BilawsExplorer } from '../screens/BilawsExplorer';
 import { HistoriesExplorer } from '../screens/HistoriesExplorer';
 import { CongratsRole } from '../screens/CongratsRole';
 import { ApproveAlliance } from '../screens/ApproveAlliance';
+import { CreateAIAgent } from '../screens/CreateAIAgent';
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -25,6 +26,7 @@ export type RootStackParamList = {
   FoundCommunity: undefined;
   FoundCommunitySuccess: { name: string; address: string; txHash: string };
   CommunityDashboard: { address: string };
+  CreateAIAgent: { communityAddress: string; communityName: string; creatorAddress?: string };
   BankingSetup: { communityAddress?: string };
   CongratsRole: undefined;
   ApproveAlliance: undefined;
@@ -169,6 +171,11 @@ export function AppNavigator() {
           name="CommunityDashboard"
           component={CommunityDashboard}
           options={{ title: 'Dashboard' }}
+        />
+        <Stack.Screen
+          name="CreateAIAgent"
+          component={CreateAIAgent}
+          options={{ title: 'Create AI Agent' }}
         />
         <Stack.Screen
           name="BankingSetup"

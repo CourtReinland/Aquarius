@@ -5,15 +5,15 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Platform,
 } from 'react-native';
-import { createWalletClient, http, parseEther } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { useWalletStore } from '../hooks/useWalletStore';
+import { useWalletAuth } from '../hooks/useWalletAuth';
 import { defaultChain } from '../config/chains';
 import { showAlert } from '../utils/alert';
+import { setDevKey } from '../utils/devWallet';
 
-// Anvil's first pre-funded account — used to send ETH to newly generated wallets on local chain
+// Anvil's first pre-funded account, used in local development so gas works immediately.
 const ANVIL_FUNDER_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80' as const;
 
 /**
@@ -21,15 +21,9 @@ const ANVIL_FUNDER_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae78
  * Stores dev key in a way that works on both web and native.
  */
 
-// Use a module-level variable that works across web and native
-let _devPrivateKey: `0x${string}` | undefined;
-
-export function getDevKey(): `0x${string}` | undefined {
-  return _devPrivateKey;
-}
-
 export function WalletConnect() {
-  const { address, isConnected, connect, disconnect } = useWalletStore();
+  const { address, isConnected, session, linkedWallets, connect, disconnect } = useWalletStore();
+  const { signInWithPrivateKey, isSigningIn, error: authError } = useWalletAuth();
   const [privateKeyInput, setPrivateKeyInput] = useState('');
   const [showInput, setShowInput] = useState(false);
 
@@ -40,13 +34,13 @@ export function WalletConnect() {
       const pk = isLocal ? ANVIL_FUNDER_KEY : generatePrivateKey();
       const account = privateKeyToAccount(pk);
 
-      _devPrivateKey = pk;
-      if (typeof globalThis !== 'undefined') {
-        (globalThis as any).__aquariusDevKey = pk;
-      }
-
+      setDevKey(pk);
       console.log('[Wallet] Connected:', account.address, isLocal ? '(Anvil pre-funded)' : '(new)');
       connect(account.address, defaultChain.id);
+      const session = await signInWithPrivateKey(pk, account.address, defaultChain.id);
+      if (!session) {
+        showAlert('Wallet Connected', 'Aquarius could not create an off-chain signed session, but blockchain reads and transactions can still use this wallet.');
+      }
     } catch (error: any) {
       console.error('[Wallet] Generate failed:', error);
       showAlert('Wallet Error', error?.message || 'Failed to generate wallet');
@@ -60,13 +54,10 @@ export function WalletConnect() {
         : (`0x${privateKeyInput}` as `0x${string}`);
       const account = privateKeyToAccount(pk);
 
-      _devPrivateKey = pk;
-      if (typeof globalThis !== 'undefined') {
-        (globalThis as any).__aquariusDevKey = pk;
-      }
-
+      setDevKey(pk);
       console.log('[Wallet] Imported:', account.address);
       connect(account.address, defaultChain.id);
+      signInWithPrivateKey(pk, account.address, defaultChain.id);
       setShowInput(false);
     } catch {
       showAlert('Invalid Key', 'Please enter a valid private key.');
@@ -74,10 +65,7 @@ export function WalletConnect() {
   };
 
   const handleDisconnect = () => {
-    _devPrivateKey = undefined;
-    if (typeof globalThis !== 'undefined') {
-      (globalThis as any).__aquariusDevKey = undefined;
-    }
+    setDevKey(undefined);
     disconnect();
   };
 
@@ -91,6 +79,10 @@ export function WalletConnect() {
           </Text>
           <Text style={styles.networkBadge}>{defaultChain.name}</Text>
         </View>
+        <Text style={[styles.sessionText, session && styles.sessionTextVerified]}>
+          {session ? 'Signed in' : 'Wallet only'}
+          {linkedWallets.length > 0 ? ` · ${linkedWallets.length} linked` : ''}
+        </Text>
         <TouchableOpacity style={styles.disconnectBtn} onPress={handleDisconnect}>
           <Text style={styles.disconnectText}>Disconnect</Text>
         </TouchableOpacity>
@@ -100,8 +92,8 @@ export function WalletConnect() {
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.primaryButton} onPress={handleGenerateWallet}>
-        <Text style={styles.primaryButtonText}>Generate Dev Wallet</Text>
+      <TouchableOpacity style={styles.primaryButton} onPress={handleGenerateWallet} disabled={isSigningIn}>
+        <Text style={styles.primaryButtonText}>{isSigningIn ? 'Signing In...' : 'Generate Dev Wallet'}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.secondaryButton} onPress={() => setShowInput(!showInput)}>
@@ -119,7 +111,7 @@ export function WalletConnect() {
             secureTextEntry
             autoCapitalize="none"
           />
-          <TouchableOpacity style={styles.importButton} onPress={handleImportWallet}>
+          <TouchableOpacity style={styles.importButton} onPress={handleImportWallet} disabled={isSigningIn}>
             <Text style={styles.importButtonText}>Connect</Text>
           </TouchableOpacity>
         </View>
@@ -128,6 +120,7 @@ export function WalletConnect() {
       <Text style={styles.hint}>
         {defaultChain.name} testnet. No real funds needed.
       </Text>
+      {authError ? <Text style={styles.authError}>{authError}</Text> : null}
     </View>
   );
 }
@@ -135,7 +128,7 @@ export function WalletConnect() {
 const styles = StyleSheet.create({
   container: { gap: 12, padding: 16 },
   connectedContainer: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    gap: 8,
     padding: 12, backgroundColor: '#161B22', borderRadius: 10,
     borderWidth: 1, borderColor: '#30363D',
   },
@@ -146,6 +139,8 @@ const styles = StyleSheet.create({
     color: '#4ECDC4', fontSize: 10, backgroundColor: '#0D2D2A',
     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, overflow: 'hidden',
   },
+  sessionText: { color: '#8B949E', fontSize: 11 },
+  sessionTextVerified: { color: '#4ECDC4' },
   disconnectBtn: {
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6,
     borderWidth: 1, borderColor: '#484F58',
@@ -169,4 +164,5 @@ const styles = StyleSheet.create({
   },
   importButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
   hint: { color: '#484F58', fontSize: 12, textAlign: 'center', marginTop: 4 },
+  authError: { color: '#F0B429', fontSize: 11, textAlign: 'center' },
 });

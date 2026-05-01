@@ -25,6 +25,7 @@ export interface CommunityData {
   founders: Address[];
   memberCount: bigint;
   founderCount: bigint;
+  aiAgentCount: bigint;
   isMember: boolean;
 }
 
@@ -35,7 +36,7 @@ export async function fetchCommunityData(
   communityAddress: Address,
   userAddress?: Address
 ): Promise<CommunityData> {
-  const [info, founders, memberCount, founderCount] = await Promise.all([
+  const [info, founders, memberCount, founderCount, aiAgentCount] = await Promise.all([
     publicClient.readContract({
       address: communityAddress,
       abi: communityAbi,
@@ -55,6 +56,11 @@ export async function fetchCommunityData(
       address: communityAddress,
       abi: communityAbi,
       functionName: 'getFounderCount',
+    }),
+    publicClient.readContract({
+      address: communityAddress,
+      abi: communityAbi,
+      functionName: 'getAIAgentCount',
     }),
   ]);
 
@@ -82,6 +88,7 @@ export async function fetchCommunityData(
     founders: founders as Address[],
     memberCount: memberCount as bigint,
     founderCount: founderCount as bigint,
+    aiAgentCount: aiAgentCount as bigint,
     isMember,
   };
 }

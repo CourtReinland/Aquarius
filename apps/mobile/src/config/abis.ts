@@ -238,6 +238,45 @@ export const communityAbi = [
   },
   {
     "type": "function",
+    "name": "aiAgents",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "agentAddress",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "agentId",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "metadataURI",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "registeredAt",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "active",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "bylaws",
     "inputs": [],
     "outputs": [
@@ -276,6 +315,19 @@ export const communityAbi = [
   },
   {
     "type": "function",
+    "name": "deactivateAIAgent",
+    "inputs": [
+      {
+        "name": "_agentAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "founders",
     "inputs": [
       {
@@ -289,6 +341,32 @@ export const communityAbi = [
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getAIAgentCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getAIAgents",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
       }
     ],
     "stateMutability": "view"
@@ -473,6 +551,25 @@ export const communityAbi = [
   },
   {
     "type": "function",
+    "name": "isAIAgent",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isFounder",
     "inputs": [
       {
@@ -530,6 +627,29 @@ export const communityAbi = [
   },
   {
     "type": "function",
+    "name": "registerAIAgent",
+    "inputs": [
+      {
+        "name": "_agentAddress",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_agentId",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "_metadataURI",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "removeMember",
     "inputs": [
       {
@@ -540,6 +660,56 @@ export const communityAbi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "AIAgentDeactivated",
+    "inputs": [
+      {
+        "name": "agentAddress",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "timestamp",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "AIAgentRegistered",
+    "inputs": [
+      {
+        "name": "agentAddress",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "agentId",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "metadataURI",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "timestamp",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -2341,4 +2511,3 @@ export const allianceModuleAbi = [
     "anonymous": false
   }
 ] as const;
-

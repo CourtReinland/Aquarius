@@ -1,7 +1,11 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useBlockchain } from '../context/BlockchainContext';
+import type { RootStackParamList } from '../navigation/AppNavigator';
+import { useWalletStore } from '../hooks/useWalletStore';
 
 /**
  * Profile / My Memberships screen.
@@ -10,6 +14,8 @@ import { useBlockchain } from '../context/BlockchainContext';
  */
 export function CommunityDashboard() {
   const { profile, myCommunities, proposals, loading, refresh, walletAddress, isConnected } = useBlockchain();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { session, linkedWallets } = useWalletStore();
 
   if (!isConnected || !walletAddress) {
     return (
@@ -42,7 +48,29 @@ export function CommunityDashboard() {
             </Text>
             <Text style={styles.networkLabel}>{'\u2022'} Anvil Local</Text>
           </View>
+          <View style={styles.sessionRow}>
+            <Text style={[styles.sessionBadge, session && styles.sessionBadgeVerified]}>
+              {session ? 'SIGNED SESSION' : 'WALLET PROOF PENDING'}
+            </Text>
+            <Text style={styles.sessionMeta}>
+              {linkedWallets.length} linked wallet{linkedWallets.length === 1 ? '' : 's'}
+            </Text>
+          </View>
         </View>
+
+        {linkedWallets.length > 0 && (
+          <View style={styles.passportCard}>
+            <Text style={styles.passportTitle}>LOCAL PASSPORT</Text>
+            {linkedWallets.slice(0, 3).map((linked) => (
+              <View key={linked.address} style={styles.passportRow}>
+                <Text style={styles.passportAddress}>
+                  {linked.address.slice(0, 8)}...{linked.address.slice(-6)}
+                </Text>
+                <Text style={styles.passportLabel}>{linked.label}</Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* Stats summary */}
         <View style={styles.statsRow}>
@@ -57,6 +85,12 @@ export function CommunityDashboard() {
           <View style={styles.statCard}>
             <Text style={styles.statNumber}>{activeProposals.length}</Text>
             <Text style={styles.statLabel}>Active Votes</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statNumber}>
+              {myCommunities.reduce((total, c) => total + c.aiAgentCount, 0)}
+            </Text>
+            <Text style={styles.statLabel}>Agents</Text>
           </View>
         </View>
 
@@ -90,6 +124,10 @@ export function CommunityDashboard() {
                 <Text style={styles.detailValue}>{c.founderCount}</Text>
               </View>
               <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Agents</Text>
+                <Text style={styles.detailValue}>{c.aiAgentCount}</Text>
+              </View>
+              <View style={styles.detailItem}>
                 <Text style={styles.detailLabel}>Founded</Text>
                 <Text style={styles.detailValue}>
                   {new Date(c.createdAt * 1000).toLocaleDateString()}
@@ -104,6 +142,20 @@ export function CommunityDashboard() {
             <Text style={styles.contractAddr}>
               {c.address.slice(0, 10)}...{c.address.slice(-8)}
             </Text>
+
+            <View style={styles.actionRow}>
+              <TouchableOpacity
+                style={styles.agentButton}
+                onPress={() => navigation.navigate('CreateAIAgent', {
+                  communityAddress: c.address,
+                  communityName: c.name,
+                  creatorAddress: walletAddress,
+                })}
+              >
+                <Text style={styles.agentButtonIcon}>+</Text>
+                <Text style={styles.agentButtonText}>Create AI Agent</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         ))}
 
@@ -140,6 +192,24 @@ const styles = StyleSheet.create({
   balanceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 12 },
   balanceAmount: { color: '#4ECDC4', fontSize: 28, fontWeight: '700', fontFamily: 'monospace' },
   networkLabel: { color: '#484F58', fontSize: 12 },
+  sessionRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' },
+  sessionBadge: {
+    color: '#F0B429',
+    fontSize: 10,
+    fontWeight: '700',
+    borderWidth: 1,
+    borderColor: '#F0B429',
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  sessionBadgeVerified: { color: '#4ECDC4', borderColor: '#4ECDC4' },
+  sessionMeta: { color: '#8B949E', fontSize: 11 },
+  passportCard: { backgroundColor: '#161B22', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: '#30363D', gap: 8 },
+  passportTitle: { color: '#8B949E', fontSize: 11, fontWeight: '700', letterSpacing: 1.5 },
+  passportRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+  passportAddress: { color: '#E6EDF3', fontSize: 12, fontFamily: 'monospace' },
+  passportLabel: { color: '#4ECDC4', fontSize: 12 },
 
   statsRow: { flexDirection: 'row', gap: 8 },
   statCard: { flex: 1, backgroundColor: '#161B22', borderRadius: 10, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: '#30363D' },
@@ -164,6 +234,21 @@ const styles = StyleSheet.create({
 
   legalInfo: { color: '#8B949E', fontSize: 11, fontStyle: 'italic' },
   contractAddr: { color: '#30363D', fontSize: 10, fontFamily: 'monospace' },
+  actionRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  agentButton: {
+    flex: 1,
+    minHeight: 42,
+    backgroundColor: '#0D2D2A',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#4ECDC4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  agentButtonIcon: { color: '#4ECDC4', fontSize: 18, fontWeight: '700' },
+  agentButtonText: { color: '#4ECDC4', fontSize: 13, fontWeight: '700' },
 
   voteItem: { backgroundColor: '#161B22', borderRadius: 8, padding: 12, borderWidth: 1, borderColor: '#30363D' },
   voteTitle: { color: '#E6EDF3', fontSize: 13 },

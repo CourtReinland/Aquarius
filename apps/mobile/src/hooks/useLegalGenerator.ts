@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { API_BASE } from '../config/api';
 
 /**
  * Hook for generating legal documents via the Aquarius API.
@@ -6,10 +7,6 @@ import { useState, useCallback } from 'react';
  * Calls the backend which uses Claude to generate
  * charter + bylaws from community parameters.
  */
-
-const API_BASE = __DEV__
-  ? 'http://localhost:3001'
-  : 'https://api.aquariusapp.eth'; // Production URL TBD
 
 interface LegalGenerationParams {
   name: string;

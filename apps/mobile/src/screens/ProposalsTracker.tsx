@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { formatEther } from 'viem';
 import { useBlockchain } from '../context/BlockchainContext';
 import { castVote, createProposal } from '../hooks/useGovernance';
-import { getDevKey } from '../components/WalletConnect';
+import { getDevKey } from '../utils/devWallet';
 import { CONTRACT_ADDRESSES, defaultChain } from '../config/chains';
 import { showAlert } from '../utils/alert';
 import type { OnChainProposal } from '../hooks/useBlockchainData';
