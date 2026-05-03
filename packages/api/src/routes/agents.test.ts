@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
-import { agentPermissionClassIndex, agentRoutes } from './agents';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { agentPermissionClassIndex, agentRoutes, resetAgentStoreForTests } from './agents';
 
 function createTestApp() {
   const app = new Hono();
@@ -20,6 +23,49 @@ describe('agent permission class mapping', () => {
 });
 
 describe('agent routes passport creation', () => {
+  it('persists created agents to the configured durable store across route reinitialization', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'aquarius-agent-store-'));
+    const storePath = join(tempDir, 'agents.json');
+
+    try {
+      mkdirSync(tempDir, { recursive: true });
+      resetAgentStoreForTests(storePath);
+      const firstApp = createTestApp();
+      const createResponse = await firstApp.request('/api/agents/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          communityAddress: '0x0000000000000000000000000000000000000001',
+          communityName: 'Durable DAO',
+          name: 'Archivist Otter',
+          role: 'Historian',
+          description: 'Keeps community memory.',
+          capabilities: ['chat'],
+          promptTemplate: 'Remember public community events.',
+          initialFundingEth: '0',
+        }),
+      });
+      expect(createResponse.status).toBe(201);
+      const created = await createResponse.json();
+      const agentId = encodeURIComponent(created.agent.agentId);
+
+      resetAgentStoreForTests(storePath);
+      const secondApp = createTestApp();
+      const passportResponse = await secondApp.request(`/api/agents/${agentId}/passport`);
+      expect(passportResponse.status).toBe(200);
+      const passport = await passportResponse.json();
+      expect(passport.identity.name).toBe('Archivist Otter');
+
+      const listResponse = await secondApp.request('/api/agents?communityAddress=0x0000000000000000000000000000000000000001');
+      const listBody = await listResponse.json();
+      expect(listBody.total).toBe(1);
+      expect(listBody.agents[0].agentId).toBe(created.agent.agentId);
+    } finally {
+      resetAgentStoreForTests(null);
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it('creates an expanded API-hosted agent passport with Agent Foundry defaults and custom fields', async () => {
     const app = createTestApp();
 

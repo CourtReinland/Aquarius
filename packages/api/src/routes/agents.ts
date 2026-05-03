@@ -15,6 +15,9 @@ import {
   randomBytes,
   randomUUID,
 } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   AGENT_PASSPORT_SCHEMA_VERSION,
   AGENT_STANDARD,
@@ -220,7 +223,30 @@ interface FundingResult {
   reason?: string;
 }
 
-const agents = new Map<string, StoredAgent>();
+const DEFAULT_AGENT_STORE_FILE = fileURLToPath(new URL('../../data/agents.json', import.meta.url));
+let agentStoreFile: string | null = process.env.AGENT_STORE_FILE ?? DEFAULT_AGENT_STORE_FILE;
+let agents = loadAgentsFromStore();
+
+function loadAgentsFromStore(): Map<string, StoredAgent> {
+  if (!agentStoreFile || !existsSync(agentStoreFile)) return new Map();
+
+  const raw = readFileSync(agentStoreFile, 'utf8').trim();
+  if (!raw) return new Map();
+
+  const parsed = JSON.parse(raw) as StoredAgent[];
+  return new Map(parsed.map((agent) => [agent.agentId, agent]));
+}
+
+function persistAgentsToStore() {
+  if (!agentStoreFile) return;
+  mkdirSync(dirname(agentStoreFile), { recursive: true });
+  writeFileSync(agentStoreFile, JSON.stringify([...agents.values()], null, 2));
+}
+
+export function resetAgentStoreForTests(storeFile: string | null) {
+  agentStoreFile = storeFile;
+  agents = loadAgentsFromStore();
+}
 
 function publicApiBaseUrl() {
   return process.env.AQUARIUS_PUBLIC_API_BASE_URL ?? `http://localhost:${process.env.PORT ?? 3001}`;
@@ -586,6 +612,7 @@ agentRoutes.post('/create', async (c) => {
     };
 
     agents.set(agentId, storedAgent);
+    persistAgentsToStore();
 
     return c.json({
       success: true,
