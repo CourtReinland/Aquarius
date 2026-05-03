@@ -111,6 +111,25 @@ describe('agent routes passport creation', () => {
       expect(chat.runtime.status).toBe('pending-orchestrator');
       expect(chat.memoryBoundary.persisted).toBe(false);
       expect(chat.toolPolicy.allowedTools).toEqual([]);
+
+      resetAgentStoreForTests(storePath);
+      const eventsApp = createTestApp();
+      const eventsResponse = await eventsApp.request(`/api/agents/${agentId}/events`);
+      const events = await eventsResponse.json();
+
+      expect(eventsResponse.status).toBe(200);
+      expect(events.total).toBe(2);
+      expect(events.events[0]).toMatchObject({
+        type: 'chat.user_message',
+        agentId: created.agent.agentId,
+        actorAddress: '0x0000000000000000000000000000000000000002',
+      });
+      expect(events.events[0].payload.content).toBe('Hi Mira, what can you do here?');
+      expect(events.events[1]).toMatchObject({
+        type: 'chat.agent_message',
+        agentId: created.agent.agentId,
+      });
+      expect(events.events[1].payload.content).toContain('Mira Lantern');
     } finally {
       resetAgentStoreForTests(null);
       rmSync(tempDir, { recursive: true, force: true });

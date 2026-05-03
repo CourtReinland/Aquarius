@@ -116,11 +116,40 @@ interface CreateAgentResult {
   warnings: string[];
 }
 
+export interface AgentChatTurn {
+  success: true;
+  agentId: string;
+  sessionId: string;
+  message: {
+    id: string;
+    role: 'agent';
+    content: string;
+    createdAt: string;
+  };
+  runtime: {
+    harness: string;
+    provider: string;
+    model: string;
+    status: string;
+  };
+  memoryBoundary: {
+    persisted: boolean;
+    reason: string;
+  };
+  toolPolicy: {
+    allowedTools: string[];
+    approvalRequired: boolean;
+    reason: string;
+  };
+}
+
 export function useAgentCreator() {
   const { session } = useWalletStore();
   const [isCreating, setIsCreating] = useState(false);
+  const [isChatting, setIsChatting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [agent, setAgent] = useState<CreatedAgent | null>(null);
+  const [chatTurn, setChatTurn] = useState<AgentChatTurn | null>(null);
 
   const createAgent = useCallback(async (params: CreateAgentParams) => {
     setIsCreating(true);
@@ -154,10 +183,47 @@ export function useAgentCreator() {
     }
   }, [session?.token]);
 
+  const testChat = useCallback(async (message: string, targetAgent = agent) => {
+    if (!targetAgent) return null;
+
+    setIsChatting(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${API_BASE}/api/agents/${encodeURIComponent(targetAgent.agentId)}/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+        },
+        body: JSON.stringify({ message }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || result.message || `HTTP ${response.status}`);
+      }
+
+      const turn = result as AgentChatTurn;
+      setChatTurn(turn);
+      return turn;
+    } catch (err: any) {
+      const messageText = err?.message ?? 'Agent chat failed';
+      setError(messageText);
+      return null;
+    } finally {
+      setIsChatting(false);
+    }
+  }, [agent, session?.token]);
+
   return {
     createAgent,
+    testChat,
     isCreating,
+    isChatting,
     error,
     agent,
+    chatTurn,
   };
 }

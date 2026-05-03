@@ -179,6 +179,16 @@ interface StoredAgent {
   initialFunding: FundingResult;
   promptHash: string;
   promptTemplate: string;
+  events: AgentRuntimeEvent[];
+  createdAt: string;
+}
+
+interface AgentRuntimeEvent {
+  id: string;
+  agentId: string;
+  type: 'chat.user_message' | 'chat.agent_message';
+  actorAddress: `0x${string}` | null;
+  payload: Record<string, unknown>;
   createdAt: string;
 }
 
@@ -242,7 +252,7 @@ function loadAgentsFromStore(): Map<string, StoredAgent> {
   if (!raw) return new Map();
 
   const parsed = JSON.parse(raw) as StoredAgent[];
-  return new Map(parsed.map((agent) => [agent.agentId, agent]));
+  return new Map(parsed.map((agent) => [agent.agentId, { ...agent, events: agent.events ?? [] }]));
 }
 
 function persistAgentsToStore() {
@@ -654,6 +664,7 @@ agentRoutes.post('/create', async (c) => {
       initialFunding,
       promptHash,
       promptTemplate: input.promptTemplate,
+      events: [],
       createdAt,
     };
 
@@ -717,8 +728,37 @@ agentRoutes.post('/:agentId/chat', async (c) => {
 
     const body = await c.req.json();
     const input = chatTurnSchema.parse(body);
+    const response = buildPendingOrchestratorChatResponse(agent, input);
+    const createdAt = new Date().toISOString();
 
-    return c.json(buildPendingOrchestratorChatResponse(agent, input));
+    agent.events.push({
+      id: `evt_${randomUUID()}`,
+      agentId: agent.agentId,
+      type: 'chat.user_message',
+      actorAddress: (input.userAddress as `0x${string}` | undefined) ?? null,
+      payload: {
+        content: input.message,
+        sessionId: response.sessionId,
+      },
+      createdAt,
+    });
+    agent.events.push({
+      id: `evt_${randomUUID()}`,
+      agentId: agent.agentId,
+      type: 'chat.agent_message',
+      actorAddress: agent.walletAddress,
+      payload: {
+        content: response.message.content,
+        messageId: response.message.id,
+        sessionId: response.sessionId,
+        runtimeStatus: response.runtime.status,
+      },
+      createdAt: response.message.createdAt,
+    });
+    agents.set(agentId, agent);
+    persistAgentsToStore();
+
+    return c.json(response);
   } catch (error: any) {
     if (error?.name === 'ZodError') {
       return c.json({ error: 'Invalid chat parameters', details: error.issues }, 400);
@@ -729,6 +769,24 @@ agentRoutes.post('/:agentId/chat', async (c) => {
       message: error?.message?.substring(0, 240),
     }, 500);
   }
+});
+
+/**
+ * GET /api/agents/:agentId/events
+ * Return durable public runtime events for the early agent orchestrator boundary.
+ */
+agentRoutes.get('/:agentId/events', (c) => {
+  const agentId = decodeURIComponent(c.req.param('agentId'));
+  const agent = agents.get(agentId);
+
+  if (!agent) {
+    return c.json({ error: 'Agent not found' }, 404);
+  }
+
+  return c.json({
+    events: agent.events,
+    total: agent.events.length,
+  });
 });
 
 /**

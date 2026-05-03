@@ -37,7 +37,7 @@ export function CreateAIAgent({ route }: Props) {
   const communityAddress = route.params?.communityAddress ?? PREVIEW_COMMUNITY.communityAddress;
   const communityName = route.params?.communityName ?? PREVIEW_COMMUNITY.communityName;
   const creatorAddress = route.params?.creatorAddress;
-  const { createAgent, isCreating, error, agent } = useAgentCreator();
+  const { createAgent, testChat, isCreating, isChatting, error, agent, chatTurn } = useAgentCreator();
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
   const [description, setDescription] = useState('');
@@ -56,6 +56,7 @@ export function CreateAIAgent({ route }: Props) {
   const [activeStep, setActiveStep] = useState<FoundryStep>('identity');
   const [capabilities, setCapabilities] = useState<string[]>(['vote', 'chat']);
   const [initialFundingEth, setInitialFundingEth] = useState('0');
+  const [chatPrompt, setChatPrompt] = useState('Hello. What can you do for this community?');
   const [promptTemplate, setPromptTemplate] = useState(
     'You are an Aquarius community agent. Read community rules first, explain your reasoning briefly, and only take actions that fit your assigned role and the community bylaws.'
   );
@@ -113,6 +114,11 @@ export function CreateAIAgent({ route }: Props) {
     if (created) {
       showAlert('Agent created', `${created.agentCard.name} now has a wallet and agent card.`);
     }
+  };
+
+  const handleTestChat = async () => {
+    if (!agent || !chatPrompt.trim()) return;
+    await testChat(chatPrompt.trim(), agent);
   };
 
   return (
@@ -298,6 +304,42 @@ export function CreateAIAgent({ route }: Props) {
             {agent.registration.reason ? (
               <Text style={styles.resultNote}>{agent.registration.reason}</Text>
             ) : null}
+
+            <View style={styles.chatCard}>
+              <Text style={styles.resultTitle}>Runtime Preview</Text>
+              <Text style={styles.resultNote}>
+                Send one safe test message through the new chat boundary. The live orchestrator is still pending, so this proves routing, policy, and event memory without exposing prompts or keys.
+              </Text>
+              <TextInput
+                style={[styles.input, styles.multiline]}
+                placeholder="Ask the agent something"
+                placeholderTextColor="#484F58"
+                value={chatPrompt}
+                onChangeText={setChatPrompt}
+                multiline
+                textAlignVertical="top"
+              />
+              <TouchableOpacity
+                style={[styles.chatButton, (!chatPrompt.trim() || isChatting) && styles.createButtonDisabled]}
+                onPress={handleTestChat}
+                disabled={!chatPrompt.trim() || isChatting}
+              >
+                {isChatting ? (
+                  <ActivityIndicator color="#4ECDC4" />
+                ) : (
+                  <Text style={styles.chatButtonText}>Test Chat Boundary</Text>
+                )}
+              </TouchableOpacity>
+              {chatTurn ? (
+                <View style={styles.chatResponse}>
+                  <Text style={styles.resultLabel}>Agent response</Text>
+                  <Text style={styles.chatResponseText}>{chatTurn.message.content}</Text>
+                  <Text style={styles.resultNote}>
+                    Runtime: {chatTurn.runtime.status} | Memory persisted: {chatTurn.memoryBoundary.persisted ? 'yes' : 'no'} | Tools: {chatTurn.toolPolicy.allowedTools.length}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
           </View>
         ) : null}
       </ScrollView>
@@ -391,4 +433,24 @@ const styles = StyleSheet.create({
   resultLabel: { color: '#8B949E', fontSize: 12 },
   resultValue: { color: '#E6EDF3', fontSize: 12, fontFamily: 'monospace', flexShrink: 1, textAlign: 'right' },
   resultNote: { color: '#8B949E', fontSize: 12, lineHeight: 18 },
+  chatCard: { marginTop: 8, gap: 10 },
+  chatButton: {
+    minHeight: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#4ECDC4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0D2D2A',
+  },
+  chatButtonText: { color: '#4ECDC4', fontSize: 14, fontWeight: '700' },
+  chatResponse: {
+    backgroundColor: '#0D1117',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#30363D',
+    padding: 12,
+    gap: 6,
+  },
+  chatResponseText: { color: '#E6EDF3', fontSize: 13, lineHeight: 19 },
 });
