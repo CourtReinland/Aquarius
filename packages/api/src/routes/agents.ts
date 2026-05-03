@@ -15,9 +15,36 @@ import {
   randomBytes,
   randomUUID,
 } from 'node:crypto';
+import {
+  AGENT_PASSPORT_SCHEMA_VERSION,
+  AGENT_STANDARD,
+  LEGACY_AGENT_CARD_SCHEMA_VERSION,
+  createDefaultAgentPassportInput,
+  type AgentCapabilities,
+  type AgentEconomics,
+  type AgentEmbodiment,
+  type AgentIdentity,
+  type AgentOrigin,
+  type AgentPermissionClass,
+  type AgentPersonality,
+  type AquariusAgentPassportV1,
+} from '@aquarius/shared';
 import { getSessionFromAuthorization } from './auth.js';
 
 export const agentRoutes = new Hono();
+
+const AGENT_PERMISSION_CLASS_INDEX: Record<AgentPermissionClass, number> = {
+  visitor: 0,
+  resident: 1,
+  worker: 2,
+  delegate: 3,
+  officer: 4,
+  sovereign: 5,
+};
+
+export function agentPermissionClassIndex(permissionClass: AgentPermissionClass): number {
+  return AGENT_PERMISSION_CLASS_INDEX[permissionClass];
+}
 
 const agentRegistrationAbi = [
   {
@@ -31,7 +58,69 @@ const agentRegistrationAbi = [
     outputs: [],
     stateMutability: 'nonpayable',
   },
+  {
+    type: 'function',
+    name: 'registerAIAgentWithClass',
+    inputs: [
+      { name: '_agentAddress', type: 'address', internalType: 'address' },
+      { name: '_agentId', type: 'string', internalType: 'string' },
+      { name: '_metadataURI', type: 'string', internalType: 'string' },
+      { name: '_permissionClass', type: 'uint8', internalType: 'enum Community.AgentPermissionClass' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
 ] as const;
+
+const originSchema = z.object({
+  mode: z.enum(['scratch', 'template', 'clone', 'hire', 'import']).default('scratch'),
+  parentAgentId: z.string().max(240).nullable().optional(),
+  templateId: z.string().max(160).nullable().optional(),
+  lineageHash: z.string().max(128).nullable().optional(),
+}).optional();
+
+const identitySchema = z.object({
+  biography: z.string().max(2000).default(''),
+  pronouns: z.string().max(40).nullable().optional(),
+  anthropomorphism: z.enum(['minimal', 'balanced', 'high', 'agent-discretion']).default('agent-discretion'),
+}).optional();
+
+const embodimentSchema = z.object({
+  avatarUri: z.string().url().nullable().optional(),
+  avatarManifestUri: z.string().url().nullable().optional(),
+  portraitUri: z.string().url().nullable().optional(),
+  portraitProvider: z.string().max(80).default('gemini-nano-banana'),
+  portraitSeed: z.string().max(160).nullable().optional(),
+  style: z.string().max(160).nullable().optional(),
+  bodyArchetype: z.string().max(120).nullable().optional(),
+  outfit: z.string().max(160).nullable().optional(),
+  voiceId: z.string().max(160).nullable().optional(),
+  selfieEndpoint: z.string().url().nullable().optional(),
+}).optional();
+
+const personalitySchema = z.object({
+  traits: z.record(z.number().min(0).max(1)).default({}),
+  greeting: z.string().max(500).nullable().optional(),
+  refusalStyle: z.string().max(300).nullable().optional(),
+  conflictStyle: z.string().max(300).nullable().optional(),
+}).optional();
+
+const permissionPolicySchema = z.object({
+  permissionClass: z.enum(['visitor', 'resident', 'worker', 'delegate', 'officer', 'sovereign']).default('worker'),
+  permissionPolicyUri: z.string().url().nullable().optional(),
+  permissionPolicyHash: z.string().max(128).nullable().optional(),
+}).optional();
+
+const economicsSchema = z.object({
+  hireable: z.boolean().default(false),
+  cloneable: z.boolean().default(false),
+  license: z.string().max(120).nullable().optional(),
+  feeRecipient: z.string().refine(isAddress, 'feeRecipient must be an EVM address').nullable().optional(),
+  hirePrice: z.string().max(80).nullable().optional(),
+  clonePrice: z.string().max(80).nullable().optional(),
+  revenueSplitBps: z.number().int().min(0).max(10000).nullable().optional(),
+  feeMode: z.enum(['off-chain', 'on-chain']).default('off-chain'),
+}).optional();
 
 const createAgentSchema = z.object({
   communityAddress: z.string().refine(isAddress, 'communityAddress must be an EVM address'),
@@ -51,8 +140,15 @@ const createAgentSchema = z.object({
     .object({
       provider: z.string().max(80).default('anthropic'),
       model: z.string().max(120).default('claude-sonnet'),
+      harness: z.enum(['hermes', 'openclaw', 'custom']).default('hermes'),
     })
-    .default({ provider: 'anthropic', model: 'claude-sonnet' }),
+    .default({ provider: 'anthropic', model: 'claude-sonnet', harness: 'hermes' }),
+  origin: originSchema,
+  identity: identitySchema,
+  embodiment: embodimentSchema,
+  personality: personalitySchema,
+  permissionPolicy: permissionPolicySchema,
+  economics: economicsSchema,
 });
 
 type CreateAgentInput = z.infer<typeof createAgentSchema>;
@@ -64,6 +160,7 @@ interface StoredAgent {
   creatorAddress: `0x${string}` | null;
   walletAddress: `0x${string}`;
   agentCard: AgentCard;
+  passport: AquariusAgentPassportV1;
   metadataUri: string;
   encryptedPrivateKey: EncryptedPrivateKey | null;
   keyStorage: 'encrypted-memory' | 'not-stored';
@@ -214,13 +311,15 @@ async function registerAgentOnChain(
     });
     const publicClient = createPublicClient({ transport: http(rpcUrl) });
 
+    const permissionClass = input.permissionPolicy?.permissionClass ?? 'worker';
     const transactionHash = await walletClient.writeContract({
       address: input.communityAddress as `0x${string}`,
       abi: agentRegistrationAbi,
-      functionName: 'registerAIAgent',
-      args: [agentAddress, agentId, metadataUri],
+      functionName: 'registerAIAgentWithClass',
+      args: [agentAddress, agentId, metadataUri, agentPermissionClassIndex(permissionClass)],
       chain: null,
-    });
+      account: operator,
+    } as any);
 
     await publicClient.waitForTransactionReceipt({ hash: transactionHash });
 
@@ -294,6 +393,107 @@ async function fundAgentWallet(
   }
 }
 
+function buildAgentPassport(input: CreateAgentInput, params: {
+  agentId: string;
+  agentAddress: `0x${string}`;
+  cardUrl: string;
+  passportUrl: string;
+  promptHash: string;
+  createdAt: string;
+}): AquariusAgentPassportV1 {
+  const defaults = createDefaultAgentPassportInput();
+  const runtimeA2a = `${runtimeBaseUrl()}/${encodeURIComponent(params.agentId)}/a2a`;
+  const runtimeMcp = `${runtimeBaseUrl()}/${encodeURIComponent(params.agentId)}/mcp`;
+  const runtimeChat = `${runtimeBaseUrl()}/${encodeURIComponent(params.agentId)}/chat`;
+
+  const origin: AgentOrigin = {
+    ...defaults.origin,
+    ...input.origin,
+    parentAgentId: input.origin?.parentAgentId ?? defaults.origin.parentAgentId,
+    templateId: input.origin?.templateId ?? defaults.origin.templateId,
+    lineageHash: input.origin?.lineageHash ?? defaults.origin.lineageHash,
+  };
+
+  const identity: AgentIdentity = {
+    name: input.name,
+    role: input.role,
+    description: input.description,
+    biography: input.identity?.biography ?? defaults.identity.biography,
+    pronouns: input.identity?.pronouns ?? defaults.identity.pronouns,
+    anthropomorphism: input.identity?.anthropomorphism ?? defaults.identity.anthropomorphism,
+  };
+
+  const embodiment: AgentEmbodiment = {
+    ...defaults.embodiment,
+    ...input.embodiment,
+    portraitProvider: input.embodiment?.portraitProvider ?? defaults.embodiment.portraitProvider,
+    selfieEndpoint: input.embodiment?.selfieEndpoint ?? `${runtimeBaseUrl()}/${encodeURIComponent(params.agentId)}/selfies`,
+  };
+
+  const personality: AgentPersonality = {
+    ...defaults.personality,
+    ...input.personality,
+    traits: input.personality?.traits ?? defaults.personality.traits,
+  };
+
+  const capabilities: AgentCapabilities = {
+    public: input.capabilities,
+    permissionClass: input.permissionPolicy?.permissionClass ?? defaults.capabilities.permissionClass,
+    permissionPolicyUri: input.permissionPolicy?.permissionPolicyUri ?? defaults.capabilities.permissionPolicyUri,
+    permissionPolicyHash: input.permissionPolicy?.permissionPolicyHash ?? defaults.capabilities.permissionPolicyHash,
+  };
+
+  const economics: AgentEconomics = {
+    ...defaults.economics,
+    ...input.economics,
+    feeRecipient: (input.economics?.feeRecipient as `0x${string}` | undefined) ?? defaults.economics.feeRecipient,
+    revenueSplitBps: input.economics?.revenueSplitBps ?? defaults.economics.revenueSplitBps,
+    feeMode: input.economics?.feeMode ?? defaults.economics.feeMode,
+  };
+
+  return {
+    schemaVersion: AGENT_PASSPORT_SCHEMA_VERSION,
+    standard: AGENT_STANDARD,
+    agentId: params.agentId,
+    agentAddress: params.agentAddress,
+    communityAddress: input.communityAddress as `0x${string}`,
+    communityName: input.communityName ?? null,
+    creatorAddress: (input.creatorAddress as `0x${string}` | undefined) ?? null,
+    origin,
+    identity,
+    embodiment,
+    personality,
+    capabilities,
+    wallet: {
+      type: defaults.wallet.type,
+      chain: process.env.AQUARIUS_CHAIN_NAME ?? 'local-or-base',
+      address: params.agentAddress,
+    },
+    runtime: {
+      harness: input.runtime.harness,
+      provider: input.runtime.provider,
+      model: input.runtime.model,
+      status: 'pending-orchestrator',
+      endpoints: {
+        card: params.cardUrl,
+        passport: params.passportUrl,
+        chat: runtimeChat,
+        a2a: runtimeA2a,
+        mcp: runtimeMcp,
+      },
+    },
+    economics,
+    hashes: {
+      promptHash: params.promptHash,
+      memoryRootHash: defaults.hashes.memoryRootHash,
+      avatarManifestHash: defaults.hashes.avatarManifestHash,
+      runtimePolicyHash: defaults.hashes.runtimePolicyHash,
+    },
+    createdAt: params.createdAt,
+    updatedAt: params.createdAt,
+  };
+}
+
 /**
  * POST /api/agents/create
  * Create an Aquarius AI-agent identity, wallet, agent card, and optional
@@ -322,12 +522,21 @@ agentRoutes.post('/create', async (c) => {
     const communityShort = input.communityAddress.slice(2, 10).toLowerCase();
     const agentId = `did:erc8004:aquarius:${communityShort}:${slugify(input.name)}-${randomUUID()}`;
     const cardUrl = `${publicApiBaseUrl()}/api/agents/${encodeURIComponent(agentId)}/card`;
-    const metadataUri = cardUrl;
+    const passportUrl = `${publicApiBaseUrl()}/api/agents/${encodeURIComponent(agentId)}/passport`;
+    const metadataUri = passportUrl;
     const promptHash = hashValue(input.promptTemplate);
+    const passport = buildAgentPassport(input, {
+      agentId,
+      agentAddress: account.address,
+      cardUrl,
+      passportUrl,
+      promptHash,
+      createdAt,
+    });
 
     const agentCard: AgentCard = {
-      schemaVersion: 'aquarius.agent-card.v1',
-      standard: 'ERC-8004',
+      schemaVersion: LEGACY_AGENT_CARD_SCHEMA_VERSION,
+      standard: AGENT_STANDARD,
       agentId,
       name: input.name,
       description: input.description,
@@ -365,6 +574,7 @@ agentRoutes.post('/create', async (c) => {
       creatorAddress: (input.creatorAddress as `0x${string}` | undefined) ?? null,
       walletAddress: account.address,
       agentCard,
+      passport,
       metadataUri,
       encryptedPrivateKey,
       keyStorage: encryptedPrivateKey ? 'encrypted-memory' : 'not-stored',
@@ -416,6 +626,17 @@ agentRoutes.get('/', (c) => {
  * GET /api/agents/:agentId/card
  * Return the public agent card advertised as the metadata URI.
  */
+agentRoutes.get('/:agentId/passport', (c) => {
+  const agentId = decodeURIComponent(c.req.param('agentId'));
+  const agent = agents.get(agentId);
+
+  if (!agent) {
+    return c.json({ error: 'Agent not found' }, 404);
+  }
+
+  return c.json(agent.passport);
+});
+
 agentRoutes.get('/:agentId/card', (c) => {
   const agentId = decodeURIComponent(c.req.param('agentId'));
   const agent = agents.get(agentId);

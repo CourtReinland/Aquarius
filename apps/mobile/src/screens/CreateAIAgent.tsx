@@ -15,6 +15,9 @@ import { useAgentCreator } from '../hooks/useAgentCreator';
 import { showAlert } from '../utils/alert';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CreateAIAgent'>;
+type FoundryStep = 'identity' | 'body' | 'permissions';
+
+const FOUNDRY_STEPS: FoundryStep[] = ['identity', 'body', 'permissions'];
 
 const CAPABILITY_CHOICES = [
   { id: 'vote', label: 'Vote' },
@@ -31,6 +34,19 @@ export function CreateAIAgent({ route }: Props) {
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
   const [description, setDescription] = useState('');
+  const [biography, setBiography] = useState('');
+  const [pronouns, setPronouns] = useState('');
+  const [anthropomorphism, setAnthropomorphism] = useState<'minimal' | 'balanced' | 'high' | 'agent-discretion'>('agent-discretion');
+  const [originMode, setOriginMode] = useState<'scratch' | 'template' | 'clone' | 'hire' | 'import'>('scratch');
+  const [bodyArchetype, setBodyArchetype] = useState('');
+  const [avatarStyle, setAvatarStyle] = useState('');
+  const [outfit, setOutfit] = useState('');
+  const [greeting, setGreeting] = useState('');
+  const [permissionClass, setPermissionClass] = useState<'visitor' | 'resident' | 'worker' | 'delegate' | 'officer' | 'sovereign'>('worker');
+  const [license, setLicense] = useState('');
+  const [hireable, setHireable] = useState(false);
+  const [cloneable, setCloneable] = useState(false);
+  const [activeStep, setActiveStep] = useState<FoundryStep>('identity');
   const [capabilities, setCapabilities] = useState<string[]>(['vote', 'chat']);
   const [initialFundingEth, setInitialFundingEth] = useState('0');
   const [promptTemplate, setPromptTemplate] = useState(
@@ -62,6 +78,29 @@ export function CreateAIAgent({ route }: Props) {
       capabilities,
       promptTemplate: promptTemplate.trim(),
       initialFundingEth: initialFundingEth.trim() || '0',
+      origin: { mode: originMode },
+      identity: {
+        biography: biography.trim(),
+        pronouns: pronouns.trim() || null,
+        anthropomorphism,
+      },
+      embodiment: {
+        portraitProvider: 'gemini-nano-banana',
+        bodyArchetype: bodyArchetype.trim() || null,
+        style: avatarStyle.trim() || null,
+        outfit: outfit.trim() || null,
+      },
+      personality: {
+        greeting: greeting.trim() || null,
+      },
+      permissionPolicy: {
+        permissionClass,
+      },
+      economics: {
+        hireable,
+        cloneable,
+        license: license.trim() || null,
+      },
     });
 
     if (created) {
@@ -80,72 +119,125 @@ export function CreateAIAgent({ route }: Props) {
           </Text>
         </View>
 
+        <View style={styles.stepTabs}>
+          {FOUNDRY_STEPS.map((step) => (
+            <TouchableOpacity
+              key={step}
+              style={[styles.stepTab, activeStep === step && styles.stepTabActive]}
+              onPress={() => setActiveStep(step)}
+            >
+              <Text style={[styles.stepTabText, activeStep === step && styles.stepTabTextActive]}>
+                {step.toUpperCase()}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         <View style={styles.formSection}>
-          <Text style={styles.label}>Agent Name</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Cupcake DAO Treasurer"
-            placeholderTextColor="#484F58"
-            value={name}
-            onChangeText={setName}
-          />
+          {activeStep === 'identity' ? (
+            <>
+              <Text style={styles.label}>Origin</Text>
+              <View style={styles.capabilityGrid}>
+                {(['scratch', 'template', 'clone', 'hire', 'import'] as const).map((mode) => (
+                  <TouchableOpacity
+                    key={mode}
+                    style={[styles.capabilityButton, originMode === mode && styles.capabilityButtonSelected]}
+                    onPress={() => setOriginMode(mode)}
+                  >
+                    <Text style={[styles.capabilityText, originMode === mode && styles.capabilityTextSelected]}>
+                      {mode}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
-          <Text style={styles.label}>Role</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Treasury assistant"
-            placeholderTextColor="#484F58"
-            value={role}
-            onChangeText={setRole}
-          />
+              <Text style={styles.label}>Agent Name</Text>
+              <TextInput style={styles.input} placeholder="Cupcake DAO Treasurer" placeholderTextColor="#484F58" value={name} onChangeText={setName} />
 
-          <Text style={styles.label}>Description</Text>
-          <TextInput
-            style={[styles.input, styles.multiline]}
-            placeholder="What this agent is trusted to do"
-            placeholderTextColor="#484F58"
-            value={description}
-            onChangeText={setDescription}
-            multiline
-            textAlignVertical="top"
-          />
+              <Text style={styles.label}>Role</Text>
+              <TextInput style={styles.input} placeholder="Treasury assistant" placeholderTextColor="#484F58" value={role} onChangeText={setRole} />
 
-          <Text style={styles.label}>Capabilities</Text>
-          <View style={styles.capabilityGrid}>
-            {CAPABILITY_CHOICES.map((capability) => {
-              const selected = capabilities.includes(capability.id);
-              return (
-                <TouchableOpacity
-                  key={capability.id}
-                  style={[styles.capabilityButton, selected && styles.capabilityButtonSelected]}
-                  onPress={() => toggleCapability(capability.id)}
-                >
-                  <Text style={[styles.capabilityText, selected && styles.capabilityTextSelected]}>
-                    {capability.label}
-                  </Text>
+              <Text style={styles.label}>Description</Text>
+              <TextInput style={[styles.input, styles.multiline]} placeholder="What this agent is trusted to do" placeholderTextColor="#484F58" value={description} onChangeText={setDescription} multiline textAlignVertical="top" />
+
+              <Text style={styles.label}>Biography</Text>
+              <TextInput style={[styles.input, styles.multiline]} placeholder="Where this agent comes from and how it sees itself" placeholderTextColor="#484F58" value={biography} onChangeText={setBiography} multiline textAlignVertical="top" />
+
+              <Text style={styles.label}>Pronouns</Text>
+              <TextInput style={styles.input} placeholder="she/her, they/them, he/him" placeholderTextColor="#484F58" value={pronouns} onChangeText={setPronouns} />
+
+              <Text style={styles.label}>Anthropomorphism</Text>
+              <View style={styles.capabilityGrid}>
+                {(['minimal', 'balanced', 'high', 'agent-discretion'] as const).map((level) => (
+                  <TouchableOpacity key={level} style={[styles.capabilityButton, anthropomorphism === level && styles.capabilityButtonSelected]} onPress={() => setAnthropomorphism(level)}>
+                    <Text style={[styles.capabilityText, anthropomorphism === level && styles.capabilityTextSelected]}>{level}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          ) : null}
+
+          {activeStep === 'body' ? (
+            <>
+              <Text style={styles.label}>Body Archetype</Text>
+              <TextInput style={styles.input} placeholder="fox, human, robot, spirit, dragon" placeholderTextColor="#484F58" value={bodyArchetype} onChangeText={setBodyArchetype} />
+
+              <Text style={styles.label}>Avatar Style</Text>
+              <TextInput style={styles.input} placeholder="storybook watercolor, anime, pixel art" placeholderTextColor="#484F58" value={avatarStyle} onChangeText={setAvatarStyle} />
+
+              <Text style={styles.label}>Outfit / Skin</Text>
+              <TextInput style={styles.input} placeholder="teal treasurer jacket" placeholderTextColor="#484F58" value={outfit} onChangeText={setOutfit} />
+
+              <Text style={styles.label}>Greeting</Text>
+              <TextInput style={[styles.input, styles.multiline]} placeholder="Hi, I am here to help..." placeholderTextColor="#484F58" value={greeting} onChangeText={setGreeting} multiline textAlignVertical="top" />
+
+              <Text style={styles.resultNote}>Portraits and selfies use Gemini / nano-banana by default once the media service is connected.</Text>
+            </>
+          ) : null}
+
+          {activeStep === 'permissions' ? (
+            <>
+              <Text style={styles.label}>Permission Class</Text>
+              <View style={styles.capabilityGrid}>
+                {(['visitor', 'resident', 'worker', 'delegate', 'officer', 'sovereign'] as const).map((agentClass) => (
+                  <TouchableOpacity key={agentClass} style={[styles.capabilityButton, permissionClass === agentClass && styles.capabilityButtonSelected]} onPress={() => setPermissionClass(agentClass)}>
+                    <Text style={[styles.capabilityText, permissionClass === agentClass && styles.capabilityTextSelected]}>{agentClass}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.label}>Capabilities</Text>
+              <View style={styles.capabilityGrid}>
+                {CAPABILITY_CHOICES.map((capability) => {
+                  const selected = capabilities.includes(capability.id);
+                  return (
+                    <TouchableOpacity key={capability.id} style={[styles.capabilityButton, selected && styles.capabilityButtonSelected]} onPress={() => toggleCapability(capability.id)}>
+                      <Text style={[styles.capabilityText, selected && styles.capabilityTextSelected]}>{capability.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.label}>Agent Pool</Text>
+              <View style={styles.capabilityGrid}>
+                <TouchableOpacity style={[styles.capabilityButton, hireable && styles.capabilityButtonSelected]} onPress={() => setHireable((value) => !value)}>
+                  <Text style={[styles.capabilityText, hireable && styles.capabilityTextSelected]}>Hireable</Text>
                 </TouchableOpacity>
-              );
-            })}
-          </View>
+                <TouchableOpacity style={[styles.capabilityButton, cloneable && styles.capabilityButtonSelected]} onPress={() => setCloneable((value) => !value)}>
+                  <Text style={[styles.capabilityText, cloneable && styles.capabilityTextSelected]}>Cloneable</Text>
+                </TouchableOpacity>
+              </View>
 
-          <Text style={styles.label}>Initial Funding (ETH)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="0"
-            placeholderTextColor="#484F58"
-            keyboardType="decimal-pad"
-            value={initialFundingEth}
-            onChangeText={setInitialFundingEth}
-          />
+              <Text style={styles.label}>License</Text>
+              <TextInput style={styles.input} placeholder="CC-BY-NC-4.0, custom, private" placeholderTextColor="#484F58" value={license} onChangeText={setLicense} />
 
-          <Text style={styles.label}>Prompt Template</Text>
-          <TextInput
-            style={[styles.input, styles.promptInput]}
-            value={promptTemplate}
-            onChangeText={setPromptTemplate}
-            multiline
-            textAlignVertical="top"
-          />
+              <Text style={styles.label}>Initial Funding (ETH)</Text>
+              <TextInput style={styles.input} placeholder="0" placeholderTextColor="#484F58" keyboardType="decimal-pad" value={initialFundingEth} onChangeText={setInitialFundingEth} />
+
+              <Text style={styles.label}>Prompt Template</Text>
+              <TextInput style={[styles.input, styles.promptInput]} value={promptTemplate} onChangeText={setPromptTemplate} multiline textAlignVertical="top" />
+            </>
+          ) : null}
         </View>
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -184,6 +276,18 @@ export function CreateAIAgent({ route }: Props) {
               <Text style={styles.resultLabel}>Key Storage</Text>
               <Text style={styles.resultValue}>{agent.keyStorage}</Text>
             </View>
+            <View style={styles.resultRow}>
+              <Text style={styles.resultLabel}>Passport</Text>
+              <Text style={styles.resultValue}>{agent.passport.schemaVersion}</Text>
+            </View>
+            <View style={styles.resultRow}>
+              <Text style={styles.resultLabel}>Class</Text>
+              <Text style={styles.resultValue}>{agent.passport.capabilities.permissionClass}</Text>
+            </View>
+            <View style={styles.resultRow}>
+              <Text style={styles.resultLabel}>Portraits</Text>
+              <Text style={styles.resultValue}>{agent.passport.embodiment.portraitProvider}</Text>
+            </View>
             {agent.registration.reason ? (
               <Text style={styles.resultNote}>{agent.registration.reason}</Text>
             ) : null}
@@ -216,6 +320,19 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 10,
   },
+  stepTabs: { flexDirection: 'row', gap: 8 },
+  stepTab: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#30363D',
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: '#161B22',
+  },
+  stepTabActive: { borderColor: '#4ECDC4', backgroundColor: '#0D2D2A' },
+  stepTabText: { color: '#8B949E', fontSize: 11, fontWeight: '700' },
+  stepTabTextActive: { color: '#4ECDC4' },
   label: { color: '#8B949E', fontSize: 12, fontWeight: '700', letterSpacing: 1 },
   input: {
     backgroundColor: '#0D1117',

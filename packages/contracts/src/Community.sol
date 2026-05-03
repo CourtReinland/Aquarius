@@ -12,6 +12,7 @@ contract Community {
     enum MemberAdmission { FoundersOnly, FoundersAndMembers }
     enum VoteThreshold { Majority, Supermajority, MinimumMembers }
     enum ProposalPermission { FoundersOnly, FoundersOrMembers }
+    enum AgentPermissionClass { Visitor, Resident, Worker, Delegate, Officer, Sovereign }
 
     struct Bylaws {
         MemberAdmission admissionRule;
@@ -56,6 +57,7 @@ contract Community {
         string metadataURI;     // IPFS/https metadata card
         uint256 registeredAt;
         bool active;
+        AgentPermissionClass permissionClass;
     }
 
     address[] public aiAgentList;
@@ -74,6 +76,7 @@ contract Community {
         address indexed agentAddress,
         string agentId,
         string metadataURI,
+        AgentPermissionClass permissionClass,
         uint256 timestamp
     );
     event AIAgentDeactivated(address indexed agentAddress, uint256 timestamp);
@@ -192,6 +195,27 @@ contract Community {
         string calldata _agentId,
         string calldata _metadataURI
     ) external {
+        _registerAIAgent(_agentAddress, _agentId, _metadataURI, AgentPermissionClass.Worker);
+    }
+
+    /**
+     * @notice Register an AI agent with an explicit on-chain permission class.
+     */
+    function registerAIAgentWithClass(
+        address _agentAddress,
+        string calldata _agentId,
+        string calldata _metadataURI,
+        AgentPermissionClass _permissionClass
+    ) external {
+        _registerAIAgent(_agentAddress, _agentId, _metadataURI, _permissionClass);
+    }
+
+    function _registerAIAgent(
+        address _agentAddress,
+        string calldata _agentId,
+        string calldata _metadataURI,
+        AgentPermissionClass _permissionClass
+    ) internal {
         require(_agentAddress != address(0), "Invalid agent address");
         require(!isAIAgent[_agentAddress], "Agent already registered");
         require(bytes(_agentId).length > 0, "agentId required");
@@ -207,7 +231,8 @@ contract Community {
             agentId: _agentId,
             metadataURI: _metadataURI,
             registeredAt: block.timestamp,
-            active: true
+            active: true,
+            permissionClass: _permissionClass
         });
         aiAgentList.push(_agentAddress);
         isAIAgent[_agentAddress] = true;
@@ -219,7 +244,13 @@ contract Community {
             emit MemberAdded(_agentAddress, block.timestamp);
         }
 
-        emit AIAgentRegistered(_agentAddress, _agentId, _metadataURI, block.timestamp);
+        emit AIAgentRegistered(
+            _agentAddress,
+            _agentId,
+            _metadataURI,
+            _permissionClass,
+            block.timestamp
+        );
     }
 
     /**

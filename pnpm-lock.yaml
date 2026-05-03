@@ -98,6 +98,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.39.0
         version: 0.39.0(encoding@0.1.13)
+      '@aquarius/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@hono/node-server':
         specifier: ^1.13.0
         version: 1.19.14(hono@4.12.14)
@@ -135,7 +138,14 @@ importers:
 
   packages/contracts: {}
 
-  packages/shared: {}
+  packages/shared:
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.19.17)(lightningcss@1.32.0)(terser@5.46.1)
 
 packages:
 

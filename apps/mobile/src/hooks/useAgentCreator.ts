@@ -13,6 +13,46 @@ export interface CreateAgentParams {
   promptTemplate: string;
   initialFundingEth: string;
   registerOnChain?: boolean;
+  origin?: {
+    mode?: 'scratch' | 'template' | 'clone' | 'hire' | 'import';
+    parentAgentId?: string | null;
+    templateId?: string | null;
+    lineageHash?: string | null;
+  };
+  identity?: {
+    biography?: string;
+    pronouns?: string | null;
+    anthropomorphism?: 'minimal' | 'balanced' | 'high' | 'agent-discretion';
+  };
+  embodiment?: {
+    avatarUri?: string | null;
+    avatarManifestUri?: string | null;
+    portraitUri?: string | null;
+    portraitProvider?: string;
+    portraitSeed?: string | null;
+    style?: string | null;
+    bodyArchetype?: string | null;
+    outfit?: string | null;
+    voiceId?: string | null;
+  };
+  personality?: {
+    traits?: Record<string, number>;
+    greeting?: string | null;
+    refusalStyle?: string | null;
+    conflictStyle?: string | null;
+  };
+  permissionPolicy?: {
+    permissionClass?: 'visitor' | 'resident' | 'worker' | 'delegate' | 'officer' | 'sovereign';
+    permissionPolicyUri?: string | null;
+    permissionPolicyHash?: string | null;
+  };
+  economics?: {
+    hireable?: boolean;
+    cloneable?: boolean;
+    license?: string | null;
+    hirePrice?: string | null;
+    clonePrice?: string | null;
+  };
 }
 
 export interface CreatedAgent {
@@ -39,6 +79,33 @@ export interface CreatedAgent {
       card: string;
       a2a: string;
       mcp: string;
+    };
+  };
+  passport: {
+    schemaVersion: 'aquarius.agent-passport.v1';
+    identity: {
+      anthropomorphism: string;
+      biography: string;
+      pronouns: string | null;
+    };
+    embodiment: {
+      portraitProvider: string;
+      bodyArchetype: string | null;
+      style: string | null;
+      outfit: string | null;
+    };
+    capabilities: {
+      permissionClass: string;
+    };
+    economics: {
+      hireable: boolean;
+      cloneable: boolean;
+      feeMode: string;
+    };
+    runtime: {
+      endpoints: {
+        passport: string;
+      };
     };
   };
 }

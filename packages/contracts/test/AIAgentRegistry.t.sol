@@ -48,12 +48,36 @@ contract AIAgentRegistryTest is Test {
         assertTrue(Community(communityAddr).isMember(aiBot));
         assertEq(Community(communityAddr).getAIAgentCount(), 1);
 
-        (address addr, string memory agentId,, uint256 registeredAt, bool active) =
-            Community(communityAddr).aiAgents(aiBot);
+        (
+            address addr,
+            string memory agentId,
+            ,
+            uint256 registeredAt,
+            bool active,
+            Community.AgentPermissionClass permissionClass
+        ) = Community(communityAddr).aiAgents(aiBot);
         assertEq(addr, aiBot);
         assertEq(agentId, "did:erc8004:aquarius:bot-alpha");
         assertTrue(active);
         assertGt(registeredAt, 0);
+        assertEq(uint8(permissionClass), uint8(Community.AgentPermissionClass.Worker));
+    }
+
+    function test_RegisterAIAgentWithPermissionClass() public {
+        vm.prank(alice);
+        Community(communityAddr).registerAIAgentWithClass(
+            aiBot,
+            "did:erc8004:aquarius:bot-alpha",
+            "ipfs://QmAgentMeta",
+            Community.AgentPermissionClass.Delegate
+        );
+
+        assertTrue(Community(communityAddr).isAIAgent(aiBot));
+        assertTrue(Community(communityAddr).isMember(aiBot));
+
+        (,,,,, Community.AgentPermissionClass permissionClass) =
+            Community(communityAddr).aiAgents(aiBot);
+        assertEq(uint8(permissionClass), uint8(Community.AgentPermissionClass.Delegate));
     }
 
     function test_MemberCanRegisterAgent() public {
@@ -85,7 +109,7 @@ contract AIAgentRegistryTest is Test {
         vm.prank(alice);
         Community(communityAddr).deactivateAIAgent(aiBot);
 
-        (,,,, bool active) = Community(communityAddr).aiAgents(aiBot);
+        (,,,, bool active,) = Community(communityAddr).aiAgents(aiBot);
         assertFalse(active);
         assertFalse(Community(communityAddr).isMember(aiBot));
         assertTrue(Community(communityAddr).isAIAgent(aiBot)); // still in registry
