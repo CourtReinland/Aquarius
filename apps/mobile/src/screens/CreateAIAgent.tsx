@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { useAgentCreator } from '../hooks/useAgentCreator';
+import { API_BASE } from '../config/api';
 import { showAlert } from '../utils/alert';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CreateAIAgent'>;
@@ -122,9 +123,36 @@ export function CreateAIAgent({ route }: Props) {
     'You are an Aquarius community agent. Read community rules first, explain your reasoning briefly, and only take actions that fit your assigned role and the community bylaws.'
   );
 
-  const canSubmit = useMemo(() => {
-    return name.trim().length > 0 && promptTemplate.trim().length > 0 && capabilities.length > 0 && !isCreating;
-  }, [capabilities.length, isCreating, name, promptTemplate]);
+  const currentStepIndex = FOUNDRY_STEPS.indexOf(activeStep);
+  const originIsComplete = originMode === 'template'
+    ? templateId.trim().length > 0
+    : originMode === 'clone' || originMode === 'hire'
+      ? parentAgentId.trim().length > 0
+      : true;
+  const monitorItems = [
+    `Step ${currentStepIndex + 1}/${FOUNDRY_STEPS.length}: ${activeStep}`,
+    `API: ${API_BASE}/api/agents/create`,
+    `Origin: ${originMode}${originIsComplete ? '' : ' needs provenance'}`,
+    `Passport: ${name.trim() ? name.trim() : 'needs name'} / ${permissionClass} / ${memoryMode}`,
+    `Capabilities: ${capabilities.length ? capabilities.join(', ') : 'none selected'}`,
+  ];
+  const missingFields = [
+    !name.trim() ? 'agent name' : null,
+    !promptTemplate.trim() ? 'private prompt template' : null,
+    capabilities.length === 0 ? 'at least one capability' : null,
+    !originIsComplete ? originMode === 'template' ? 'template ID' : 'parent agent ID' : null,
+  ].filter(Boolean) as string[];
+  const canCreate = activeStep === 'review' && missingFields.length === 0 && !isCreating;
+  const canAdvance = activeStep === 'origin' ? originIsComplete : true;
+
+  const goToNextStep = () => {
+    if (!canAdvance) return;
+    setActiveStep(FOUNDRY_STEPS[Math.min(currentStepIndex + 1, FOUNDRY_STEPS.length - 1)]);
+  };
+
+  const goToPreviousStep = () => {
+    setActiveStep(FOUNDRY_STEPS[Math.max(currentStepIndex - 1, 0)]);
+  };
 
   const toggleCapability = (id: string) => {
     setCapabilities((current) =>
@@ -164,7 +192,7 @@ export function CreateAIAgent({ route }: Props) {
   };
 
   const handleCreate = async () => {
-    if (!canSubmit) return;
+    if (!canCreate) return;
 
     const created = await createAgent({
       communityAddress,
@@ -233,6 +261,16 @@ export function CreateAIAgent({ route }: Props) {
           <Text style={styles.communityName}>{communityName}</Text>
           <Text style={styles.addressText}>
             {communityAddress.slice(0, 10)}...{communityAddress.slice(-8)}
+          </Text>
+        </View>
+
+        <View style={styles.monitorCard}>
+          <Text style={styles.eyebrow}>FOUNDRY TEST WINDOW</Text>
+          {monitorItems.map((item) => (
+            <Text key={item} style={styles.monitorLine}>{item}</Text>
+          ))}
+          <Text style={[styles.monitorStatus, missingFields.length === 0 && styles.monitorStatusReady]}>
+            {missingFields.length === 0 ? 'Ready for review/create' : `Needs: ${missingFields.join(', ')}`}
           </Text>
         </View>
 
@@ -426,10 +464,27 @@ export function CreateAIAgent({ route }: Props) {
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
+        <View style={styles.navigationRow}>
+          <TouchableOpacity
+            style={[styles.secondaryButton, currentStepIndex === 0 && styles.createButtonDisabled]}
+            onPress={goToPreviousStep}
+            disabled={currentStepIndex === 0}
+          >
+            <Text style={styles.secondaryButtonText}>Back</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.secondaryButton, (!canAdvance || currentStepIndex === FOUNDRY_STEPS.length - 1) && styles.createButtonDisabled]}
+            onPress={goToNextStep}
+            disabled={!canAdvance || currentStepIndex === FOUNDRY_STEPS.length - 1}
+          >
+            <Text style={styles.secondaryButtonText}>Next</Text>
+          </TouchableOpacity>
+        </View>
+
         <TouchableOpacity
-          style={[styles.createButton, !canSubmit && styles.createButtonDisabled]}
+          style={[styles.createButton, !canCreate && styles.createButtonDisabled]}
           onPress={handleCreate}
-          disabled={!canSubmit}
+          disabled={!canCreate}
         >
           {isCreating ? (
             <ActivityIndicator color="#0D1117" />
@@ -532,6 +587,17 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 4,
   },
+  monitorCard: {
+    backgroundColor: '#0B1F2A',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1F6FEB',
+    padding: 14,
+    gap: 5,
+  },
+  monitorLine: { color: '#C9D1D9', fontSize: 12, fontFamily: 'monospace' },
+  monitorStatus: { color: '#F2CC60', fontSize: 12, fontWeight: '700' },
+  monitorStatusReady: { color: '#4ECDC4' },
   eyebrow: { color: '#484F58', fontSize: 10, letterSpacing: 2, fontWeight: '700' },
   communityName: { color: '#E6EDF3', fontSize: 20, fontWeight: '700' },
   addressText: { color: '#8B949E', fontFamily: 'monospace', fontSize: 11 },
@@ -592,6 +658,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#0D1117',
   },
   traitDotSelected: { borderColor: '#4ECDC4', backgroundColor: '#4ECDC4' },
+  navigationRow: { flexDirection: 'row', gap: 10 },
+  secondaryButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#30363D',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#161B22',
+  },
+  secondaryButtonText: { color: '#4ECDC4', fontSize: 14, fontWeight: '700' },
   createButton: {
     minHeight: 52,
     backgroundColor: '#4ECDC4',

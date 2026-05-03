@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { agentPermissionClassIndex, agentRoutes, resetAgentStoreForTests } from './agents';
@@ -48,6 +48,17 @@ describe('agent routes passport creation', () => {
       });
       expect(createResponse.status).toBe(201);
       const created = await createResponse.json();
+      const rawStore = JSON.parse(readFileSync(storePath, 'utf8'));
+      expect(rawStore.version).toBe(2);
+      expect(rawStore.publicAgents[0].agentId).toBe(created.agent.agentId);
+      expect(rawStore.publicAgents[0].passport.identity.name).toBe('Archivist Otter');
+      expect(rawStore.publicAgents[0]).not.toHaveProperty('promptTemplate');
+      expect(rawStore.privateRuntimeConfigs[0]).toMatchObject({
+        agentId: created.agent.agentId,
+        promptTemplate: 'Remember public community events.',
+      });
+      expect(rawStore.privateRuntimeConfigs[0]).toHaveProperty('encryptedPrivateKey');
+      expect(JSON.stringify(rawStore.publicAgents)).not.toContain('Remember public community events.');
       const agentId = encodeURIComponent(created.agent.agentId);
 
       resetAgentStoreForTests(storePath);

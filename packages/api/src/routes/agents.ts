@@ -248,6 +248,28 @@ interface StoredAgent {
   createdAt: string;
 }
 
+type PublicStoredAgent = Omit<StoredAgent, 'encryptedPrivateKey' | 'promptTemplate'>;
+
+interface PrivateRuntimeConfig {
+  agentId: string;
+  promptTemplate: string;
+  encryptedPrivateKey: EncryptedPrivateKey | null;
+  runtimeConfig: {
+    harness: string;
+    provider: string;
+    model: string;
+    promptHash: string;
+    keyStorage: StoredAgent['keyStorage'];
+  };
+  updatedAt: string;
+}
+
+interface AgentStoreDocumentV2 {
+  version: 2;
+  publicAgents: PublicStoredAgent[];
+  privateRuntimeConfigs: PrivateRuntimeConfig[];
+}
+
 interface AgentRuntimeEvent {
   id: string;
   agentId: string;
@@ -323,14 +345,49 @@ function loadAgentsFromStore(): Map<string, StoredAgent> {
   const raw = readFileSync(agentStoreFile, 'utf8').trim();
   if (!raw) return new Map();
 
-  const parsed = JSON.parse(raw) as StoredAgent[];
-  return new Map(parsed.map((agent) => [agent.agentId, { ...agent, events: agent.events ?? [] }]));
+  const parsed = JSON.parse(raw) as StoredAgent[] | AgentStoreDocumentV2;
+
+  if (Array.isArray(parsed)) {
+    return new Map(parsed.map((agent) => [agent.agentId, { ...agent, events: agent.events ?? [] }]));
+  }
+
+  const runtimeConfigs = new Map(parsed.privateRuntimeConfigs.map((config) => [config.agentId, config]));
+  return new Map(parsed.publicAgents.map((publicAgent) => {
+    const runtimeConfig = runtimeConfigs.get(publicAgent.agentId);
+    const restoredAgent: StoredAgent = {
+      ...publicAgent,
+      encryptedPrivateKey: runtimeConfig?.encryptedPrivateKey ?? null,
+      promptTemplate: runtimeConfig?.promptTemplate ?? '',
+      events: publicAgent.events ?? [],
+    };
+    return [restoredAgent.agentId, restoredAgent];
+  }));
 }
 
 function persistAgentsToStore() {
   if (!agentStoreFile) return;
   mkdirSync(dirname(agentStoreFile), { recursive: true });
-  writeFileSync(agentStoreFile, JSON.stringify([...agents.values()], null, 2));
+  const document: AgentStoreDocumentV2 = {
+    version: 2,
+    publicAgents: [...agents.values()].map((agent) => {
+      const { encryptedPrivateKey, promptTemplate, ...publicAgent } = agent;
+      return publicAgent;
+    }),
+    privateRuntimeConfigs: [...agents.values()].map((agent) => ({
+      agentId: agent.agentId,
+      promptTemplate: agent.promptTemplate,
+      encryptedPrivateKey: agent.encryptedPrivateKey,
+      runtimeConfig: {
+        harness: agent.passport.runtime.harness,
+        provider: agent.passport.runtime.provider,
+        model: agent.passport.runtime.model,
+        promptHash: agent.promptHash,
+        keyStorage: agent.keyStorage,
+      },
+      updatedAt: agent.passport.updatedAt,
+    })),
+  };
+  writeFileSync(agentStoreFile, JSON.stringify(document, null, 2));
 }
 
 export function resetAgentStoreForTests(storeFile: string | null) {
