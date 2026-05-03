@@ -269,6 +269,79 @@ describe('agent routes passport creation', () => {
     expect(hashResponse.status).toBe(400);
   });
 
+  it('gets and safely updates editable agent settings across route reinitialization', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'aquarius-agent-update-'));
+    const storePath = join(tempDir, 'agents.json');
+
+    try {
+      resetAgentStoreForTests(storePath);
+      const app = createTestApp();
+      const createResponse = await app.request('/api/agents/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          communityAddress: '0x0000000000000000000000000000000000000001',
+          name: 'Editable Lynx',
+          role: 'Operations aide',
+          description: 'Starts with default settings.',
+          capabilities: ['chat'],
+          promptTemplate: 'Private operating prompt.',
+          initialFundingEth: '0',
+        }),
+      });
+      const created = await createResponse.json();
+      const agentId = encodeURIComponent(created.agent.agentId);
+      const originalUpdatedAt = created.agent.passport.updatedAt;
+
+      const getResponse = await app.request(`/api/agents/${agentId}`);
+      expect(getResponse.status).toBe(200);
+      const fetched = await getResponse.json();
+      expect(fetched.agent.agentId).toBe(created.agent.agentId);
+      expect(JSON.stringify(fetched)).not.toContain('Private operating prompt.');
+
+      const patchResponse = await app.request(`/api/agents/${agentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identity: { biography: 'Updated public biography.', pronouns: 'they/them' },
+          personality: { greeting: 'Hello, I am updated.', traits: { directness: 0.75 } },
+          memoryPolicy: { mode: 'officer-memory', retentionDays: 90 },
+          permissionPolicy: { permissionClass: 'officer' },
+          economics: { hireable: true, hirePrice: '25 USDC/month' },
+          agentAddress: '0x0000000000000000000000000000000000000009',
+          promptHash: 'should-not-change',
+        }),
+      });
+      expect(patchResponse.status).toBe(200);
+      const updated = await patchResponse.json();
+      expect(updated.agent.passport.identity.biography).toBe('Updated public biography.');
+      expect(updated.agent.passport.identity.pronouns).toBe('they/them');
+      expect(updated.agent.passport.personality.greeting).toBe('Hello, I am updated.');
+      expect(updated.agent.passport.memoryPolicy).toMatchObject({
+        mode: 'officer-memory',
+        retentionDays: 90,
+        remembersPrivateChats: true,
+        remembersCommunityEvents: true,
+      });
+      expect(updated.agent.passport.capabilities.permissionClass).toBe('officer');
+      expect(updated.agent.passport.economics.hireable).toBe(true);
+      expect(updated.agent.passport.economics.hirePrice).toBe('25 USDC/month');
+      expect(updated.agent.passport.agentAddress).toBe(created.agent.passport.agentAddress);
+      expect(updated.agent.passport.hashes.promptHash).toBe(created.agent.passport.hashes.promptHash);
+      expect(updated.agent.passport.updatedAt).not.toBe(originalUpdatedAt);
+
+      resetAgentStoreForTests(storePath);
+      const reloadedApp = createTestApp();
+      const reloadedPassport = await reloadedApp.request(`/api/agents/${agentId}/passport`);
+      const passport = await reloadedPassport.json();
+      expect(passport.identity.biography).toBe('Updated public biography.');
+      expect(passport.memoryPolicy.mode).toBe('officer-memory');
+    } finally {
+      resetAgentStoreForTests(null);
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it('serves structured placeholders for advertised A2A, MCP, and selfie endpoints', async () => {
     const app = createTestApp();
     const response = await app.request('/api/agents/create', {

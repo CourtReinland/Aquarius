@@ -181,6 +181,46 @@ const createAgentSchema = z.object({
 
 type CreateAgentInput = z.infer<typeof createAgentSchema>;
 
+const updateAgentSchema = z.object({
+  identity: z.object({
+    biography: z.string().max(2000).optional(),
+    pronouns: z.string().max(40).nullable().optional(),
+    anthropomorphism: z.enum(['minimal', 'balanced', 'high', 'agent-discretion']).optional(),
+  }).optional(),
+  embodiment: z.object({
+    avatarUri: z.string().url().nullable().optional(),
+    avatarManifestUri: z.string().url().nullable().optional(),
+    portraitUri: z.string().url().nullable().optional(),
+    portraitProvider: z.string().max(80).optional(),
+    portraitSeed: z.string().max(160).nullable().optional(),
+    style: z.string().max(160).nullable().optional(),
+    bodyArchetype: z.string().max(120).nullable().optional(),
+    outfit: z.string().max(160).nullable().optional(),
+    voiceId: z.string().max(160).nullable().optional(),
+    selfieEndpoint: z.string().url().nullable().optional(),
+  }).optional(),
+  personality: z.object({
+    traits: z.record(z.number().min(0).max(1)).optional(),
+    greeting: z.string().max(500).nullable().optional(),
+    refusalStyle: z.string().max(300).nullable().optional(),
+    conflictStyle: z.string().max(300).nullable().optional(),
+  }).optional(),
+  memoryPolicy: memoryPolicySchema,
+  permissionPolicy: permissionPolicySchema,
+  economics: z.object({
+    hireable: z.boolean().optional(),
+    cloneable: z.boolean().optional(),
+    license: z.string().max(120).nullable().optional(),
+    feeRecipient: z.string().refine(isAddress, 'feeRecipient must be an EVM address').nullable().optional(),
+    hirePrice: z.string().max(80).nullable().optional(),
+    clonePrice: z.string().max(80).nullable().optional(),
+    revenueSplitBps: z.number().int().min(0).max(10000).nullable().optional(),
+    feeMode: z.enum(['off-chain', 'on-chain']).optional(),
+  }).optional(),
+});
+
+type UpdateAgentInput = z.infer<typeof updateAgentSchema>;
+
 const chatTurnSchema = z.object({
   message: z.string().min(1).max(4000),
   userAddress: z.string().refine(isAddress, 'userAddress must be an EVM address').optional(),
@@ -520,6 +560,73 @@ async function fundAgentWallet(
   }
 }
 
+function normalizeMemoryPolicy(current: AgentMemoryPolicy, update?: UpdateAgentInput['memoryPolicy']): AgentMemoryPolicy {
+  if (!update) return current;
+  const mode = update.mode ?? current.mode;
+  return {
+    ...current,
+    ...update,
+    mode,
+    remembersPrivateChats: update?.remembersPrivateChats
+      ?? (mode === 'personal-companion' || mode === 'officer-memory'),
+    remembersCommunityEvents: update?.remembersCommunityEvents
+      ?? (mode === 'community-memory' || mode === 'officer-memory' || current.remembersCommunityEvents),
+    cloneSafe: update?.cloneSafe ?? (mode === 'clone-safe' || current.cloneSafe),
+    retentionDays: update?.retentionDays ?? current.retentionDays,
+    editableAfterCreation: update?.editableAfterCreation ?? current.editableAfterCreation,
+  };
+}
+
+function nextUpdatedAt(previous: string) {
+  const now = new Date();
+  const previousMs = Date.parse(previous);
+  if (Number.isFinite(previousMs) && now.getTime() <= previousMs) {
+    return new Date(previousMs + 1).toISOString();
+  }
+  return now.toISOString();
+}
+
+function applyAgentUpdate(agent: StoredAgent, update: UpdateAgentInput): StoredAgent {
+  const updatedAt = nextUpdatedAt(agent.passport.updatedAt);
+  const passport: AquariusAgentPassportV1 = {
+    ...agent.passport,
+    identity: update.identity ? { ...agent.passport.identity, ...update.identity } : agent.passport.identity,
+    embodiment: update.embodiment ? { ...agent.passport.embodiment, ...update.embodiment } : agent.passport.embodiment,
+    personality: update.personality
+      ? {
+          ...agent.passport.personality,
+          ...update.personality,
+          traits: update.personality.traits
+            ? { ...agent.passport.personality.traits, ...update.personality.traits }
+            : agent.passport.personality.traits,
+        }
+      : agent.passport.personality,
+    memoryPolicy: normalizeMemoryPolicy(agent.passport.memoryPolicy, update.memoryPolicy),
+    capabilities: update.permissionPolicy
+      ? {
+          ...agent.passport.capabilities,
+          permissionClass: update.permissionPolicy.permissionClass ?? agent.passport.capabilities.permissionClass,
+          permissionPolicyUri: update.permissionPolicy.permissionPolicyUri ?? agent.passport.capabilities.permissionPolicyUri,
+          permissionPolicyHash: update.permissionPolicy.permissionPolicyHash ?? agent.passport.capabilities.permissionPolicyHash,
+        }
+      : agent.passport.capabilities,
+    economics: update.economics ? { ...agent.passport.economics, ...update.economics } : agent.passport.economics,
+    updatedAt,
+  };
+
+  return {
+    ...agent,
+    passport,
+    agentCard: {
+      ...agent.agentCard,
+      runtime: {
+        ...agent.agentCard.runtime,
+      },
+      capabilities: passport.capabilities.public,
+    },
+  };
+}
+
 function buildAgentPassport(input: CreateAgentInput, params: {
   agentId: string;
   agentAddress: `0x${string}`;
@@ -763,6 +870,48 @@ agentRoutes.get('/', (c) => {
     agents: list,
     total: list.length,
   });
+});
+
+agentRoutes.get('/:agentId', (c) => {
+  const agentId = decodeURIComponent(c.req.param('agentId'));
+  const agent = agents.get(agentId);
+
+  if (!agent) {
+    return c.json({ error: 'Agent not found' }, 404);
+  }
+
+  return c.json({ agent: safeAgent(agent) });
+});
+
+agentRoutes.patch('/:agentId', async (c) => {
+  try {
+    const agentId = decodeURIComponent(c.req.param('agentId'));
+    const agent = agents.get(agentId);
+
+    if (!agent) {
+      return c.json({ error: 'Agent not found' }, 404);
+    }
+
+    const body = await c.req.json();
+    const input = updateAgentSchema.parse(body);
+    const updatedAgent = applyAgentUpdate(agent, input);
+    agents.set(agentId, updatedAgent);
+    persistAgentsToStore();
+
+    return c.json({
+      success: true,
+      agent: safeAgent(updatedAgent),
+    });
+  } catch (error: any) {
+    if (error?.name === 'ZodError') {
+      return c.json({ error: 'Invalid agent update parameters', details: error.issues }, 400);
+    }
+
+    return c.json({
+      error: 'Agent update failed',
+      message: error?.message?.substring(0, 240),
+    }, 500);
+  }
 });
 
 /**
