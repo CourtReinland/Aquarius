@@ -149,6 +149,12 @@ const economicsSchema = z.object({
   feeMode: z.enum(['off-chain', 'on-chain']).default('off-chain'),
 }).optional();
 
+const walletStorageSchema = z.object({
+  type: z.enum(['local-encrypted', 'kms', 'lit', 'smart-account-session']).default('local-encrypted'),
+  keyRef: z.string().max(240).nullable().optional(),
+  humanApprovalRequired: z.boolean().default(true),
+}).optional();
+
 const createAgentSchema = z.object({
   communityAddress: z.string().refine(isAddress, 'communityAddress must be an EVM address'),
   communityName: z.string().min(1).max(100).optional(),
@@ -170,6 +176,7 @@ const createAgentSchema = z.object({
       harness: z.enum(['hermes', 'openclaw', 'custom']).default('hermes'),
     })
     .default({ provider: 'anthropic', model: 'claude-sonnet', harness: 'hermes' }),
+  walletStorage: walletStorageSchema,
   origin: originSchema,
   identity: identitySchema,
   embodiment: embodimentSchema,
@@ -227,6 +234,28 @@ const chatTurnSchema = z.object({
   sessionId: z.string().max(160).optional(),
 });
 
+const signingRequestSchema = z.object({
+  action: z.enum(['send-transaction', 'contract-call', 'message-signature']),
+  to: z.string().refine(isAddress, 'to must be an EVM address').nullable().optional(),
+  valueEth: z.string().regex(/^\d+(\.\d{1,18})?$/, 'valueEth must be an ETH amount string').default('0'),
+  data: z.string().max(20000).nullable().optional(),
+  risk: z.enum(['low', 'medium', 'high', 'critical']).default('medium'),
+  reason: z.string().min(1).max(500),
+  humanApproved: z.boolean().default(false),
+  approvedBy: z.string().refine(isAddress, 'approvedBy must be an EVM address').nullable().optional(),
+});
+
+type SigningRequestInput = z.infer<typeof signingRequestSchema>;
+
+const contractEventSchema = z.object({
+  transactionHash: hashSchema,
+  eventName: z.string().min(1).max(120),
+  blockNumber: z.number().int().nonnegative().optional(),
+  payload: z.record(z.unknown()).default({}),
+});
+
+type ContractEventInput = z.infer<typeof contractEventSchema>;
+
 type ChatTurnInput = z.infer<typeof chatTurnSchema>;
 
 interface StoredAgent {
@@ -240,27 +269,82 @@ interface StoredAgent {
   metadataUri: string;
   encryptedPrivateKey: EncryptedPrivateKey | null;
   keyStorage: 'encrypted-memory' | 'not-stored';
+  walletPolicy: AgentWalletPolicy;
   registration: RegistrationResult;
   initialFunding: FundingResult;
   promptHash: string;
   promptTemplate: string;
   events: AgentRuntimeEvent[];
+  signingRequests: AgentSigningRequest[];
+  memoryRecords: AgentMemoryRecord[];
+  contractWatcher: ContractWatcherState;
   createdAt: string;
 }
 
 type PublicStoredAgent = Omit<StoredAgent, 'encryptedPrivateKey' | 'promptTemplate'>;
 
+type WalletStorageType = 'local-encrypted' | 'kms' | 'lit' | 'smart-account-session';
+
+interface AgentWalletPolicy {
+  storage: {
+    type: WalletStorageType;
+    keyRef: string | null;
+    configured: boolean;
+  };
+  signer: 'eoa' | 'kms' | 'lit' | 'smart-account';
+  humanApprovalRequired: boolean;
+  riskyActions: string[];
+  sessionKey: {
+    enabled: boolean;
+    expiresAt: string | null;
+  };
+}
+
+interface AgentSigningRequest {
+  id: string;
+  agentId: string;
+  action: SigningRequestInput['action'];
+  to: `0x${string}` | null;
+  valueEth: string;
+  data: string | null;
+  risk: SigningRequestInput['risk'];
+  reason: string;
+  status: 'pending-human-approval' | 'approved-not-signed' | 'rejected-by-policy';
+  humanApprovalRequired: boolean;
+  approvedBy: `0x${string}` | null;
+  transactionHash: Hash | null;
+  createdAt: string;
+}
+
+interface AgentMemoryRecord {
+  id: string;
+  agentId: string;
+  type: 'chat-turn' | 'contract-event';
+  visibility: 'community' | 'private' | 'session';
+  summary: string;
+  sourceEventId: string;
+  createdAt: string;
+}
+
+interface ContractWatcherState {
+  status: 'reserved' | 'connected';
+  lastTransactionHash: string | null;
+  lastEventName: string | null;
+  lastBlockNumber: number | null;
+}
+
 interface PrivateRuntimeConfig {
   agentId: string;
   promptTemplate: string;
   encryptedPrivateKey: EncryptedPrivateKey | null;
-  runtimeConfig: {
-    harness: string;
-    provider: string;
-    model: string;
-    promptHash: string;
-    keyStorage: StoredAgent['keyStorage'];
-  };
+      runtimeConfig: {
+        harness: string;
+        provider: string;
+        model: string;
+        promptHash: string;
+        keyStorage: StoredAgent['keyStorage'];
+        walletStorage: AgentWalletPolicy['storage'];
+      };
   updatedAt: string;
 }
 
@@ -273,7 +357,7 @@ interface AgentStoreDocumentV2 {
 interface AgentRuntimeEvent {
   id: string;
   agentId: string;
-  type: 'chat.user_message' | 'chat.agent_message';
+  type: 'chat.user_message' | 'chat.agent_message' | 'runtime.signing_request' | 'contract.event';
   actorAddress: `0x${string}` | null;
   payload: Record<string, unknown>;
   createdAt: string;
@@ -359,6 +443,10 @@ function loadAgentsFromStore(): Map<string, StoredAgent> {
       encryptedPrivateKey: runtimeConfig?.encryptedPrivateKey ?? null,
       promptTemplate: runtimeConfig?.promptTemplate ?? '',
       events: publicAgent.events ?? [],
+      signingRequests: publicAgent.signingRequests ?? [],
+      memoryRecords: publicAgent.memoryRecords ?? [],
+      contractWatcher: publicAgent.contractWatcher ?? defaultContractWatcherState(),
+      walletPolicy: publicAgent.walletPolicy ?? buildWalletPolicy({ type: 'local-encrypted', humanApprovalRequired: true }, Boolean(runtimeConfig?.encryptedPrivateKey)),
     };
     return [restoredAgent.agentId, restoredAgent];
   }));
@@ -383,6 +471,7 @@ function persistAgentsToStore() {
         model: agent.passport.runtime.model,
         promptHash: agent.promptHash,
         keyStorage: agent.keyStorage,
+        walletStorage: agent.walletPolicy.storage,
       },
       updatedAt: agent.passport.updatedAt,
     })),
@@ -437,6 +526,99 @@ function encryptPrivateKey(privateKey: `0x${string}`): EncryptedPrivateKey | nul
   };
 }
 
+function defaultContractWatcherState(): ContractWatcherState {
+  return {
+    status: 'reserved',
+    lastTransactionHash: null,
+    lastEventName: null,
+    lastBlockNumber: null,
+  };
+}
+
+function signerForStorage(type: WalletStorageType): AgentWalletPolicy['signer'] {
+  if (type === 'kms') return 'kms';
+  if (type === 'lit') return 'lit';
+  if (type === 'smart-account-session') return 'smart-account';
+  return 'eoa';
+}
+
+function buildWalletPolicy(input: z.infer<typeof walletStorageSchema>, hasEncryptedKey: boolean): AgentWalletPolicy {
+  const requestedType = input?.type ?? 'local-encrypted';
+  const configured = requestedType === 'local-encrypted' ? hasEncryptedKey : Boolean(input?.keyRef);
+  return {
+    storage: {
+      type: requestedType,
+      keyRef: input?.keyRef ?? null,
+      configured,
+    },
+    signer: signerForStorage(requestedType),
+    humanApprovalRequired: input?.humanApprovalRequired ?? true,
+    riskyActions: ['send-transaction', 'contract-call', 'trade-crypto', 'manage-treasury', 'vote'],
+    sessionKey: {
+      enabled: requestedType === 'smart-account-session',
+      expiresAt: requestedType === 'smart-account-session' ? null : null,
+    },
+  };
+}
+
+const SAFE_TOOL_CAPABILITIES = new Set(['chat', 'read-community-history', 'monitor-proposals', 'draft-proposals', 'generate-public-posts']);
+
+function sandboxPolicy(agent: StoredAgent) {
+  const publicCapabilities = agent.passport.capabilities.public;
+  const allowedTools = publicCapabilities.filter((capability) => SAFE_TOOL_CAPABILITIES.has(capability));
+  return {
+    allowedTools,
+    blockedCapabilities: publicCapabilities.filter((capability) => !SAFE_TOOL_CAPABILITIES.has(capability)),
+    approvalRequired: true,
+    reason: 'Only read/chat/draft tools are enabled in the MVP sandbox; signing and risky actions require explicit human approval.',
+  };
+}
+
+function shouldPersistCommunityMemory(agent: StoredAgent) {
+  return agent.passport.memoryPolicy.remembersCommunityEvents || agent.passport.memoryPolicy.mode === 'community-memory';
+}
+
+function addMemoryRecord(agent: StoredAgent, params: Omit<AgentMemoryRecord, 'id' | 'agentId' | 'createdAt'>) {
+  const record: AgentMemoryRecord = {
+    id: `mem_${randomUUID()}`,
+    agentId: agent.agentId,
+    createdAt: new Date().toISOString(),
+    ...params,
+  };
+  agent.memoryRecords.push(record);
+  return record;
+}
+
+function orchestratorStatus(agent: StoredAgent) {
+  const policy = sandboxPolicy(agent);
+  return {
+    agentId: agent.agentId,
+    workerService: {
+      configured: true,
+      active: false,
+      reason: 'The API hosts the MVP orchestrator boundary; no external worker process is attached yet.',
+    },
+    eventQueue: {
+      type: 'durable-json-bridge',
+      depth: agent.events.length,
+      unprocessed: agent.events.length,
+    },
+    runtimeAdapter: {
+      harness: agent.passport.runtime.harness,
+      provider: agent.passport.runtime.provider,
+      model: agent.passport.runtime.model,
+      status: agent.passport.runtime.status,
+    },
+    memoryStore: {
+      mode: agent.passport.memoryPolicy.mode,
+      records: agent.memoryRecords.length,
+      privateMemoryExposed: false,
+    },
+    contractWatcher: agent.contractWatcher,
+    sandbox: policy,
+  };
+}
+
 function safeAgent(agent: StoredAgent) {
   const {
     promptTemplate,
@@ -463,10 +645,11 @@ function buildFirstMoment(agent: StoredAgent): FirstMoment {
   };
 }
 
-function buildPendingOrchestratorChatResponse(agent: StoredAgent, input: ChatTurnInput) {
+function buildPendingOrchestratorChatResponse(agent: StoredAgent, input: ChatTurnInput, persistedMemory: boolean = false) {
   const greeting = agent.passport.personality.greeting;
   const intro = greeting ? `${greeting} ` : `I am ${agent.passport.identity.name}. `;
   const runtime = agent.passport.runtime;
+  const policy = sandboxPolicy(agent);
 
   return {
     success: true,
@@ -480,7 +663,7 @@ function buildPendingOrchestratorChatResponse(agent: StoredAgent, input: ChatTur
     message: {
       id: `msg_${randomUUID()}`,
       role: 'agent',
-      content: `${intro}${agent.passport.identity.name} is registered and reachable, but the live ${runtime.harness} orchestrator is not attached yet. This endpoint is the safe chat boundary for the upcoming runtime: it can identify the agent, preserve public personality fields, and keep hidden instructions, keys, and memory sealed.`,
+      content: `${intro}${agent.passport.identity.name} is registered and reachable through the MVP ${runtime.harness} orchestrator boundary. A live external worker is not attached yet, but this route queues events, applies sandbox policy, and stores permitted memory without exposing hidden instructions or keys.`,
       createdAt: new Date().toISOString(),
     },
     runtime: {
@@ -490,14 +673,10 @@ function buildPendingOrchestratorChatResponse(agent: StoredAgent, input: ChatTur
       status: runtime.status,
     },
     memoryBoundary: {
-      persisted: false,
-      reason: 'Durable private memory store is not enabled for chat turns yet.',
+      persisted: persistedMemory,
+      reason: persistedMemory ? 'Community-safe memory summary was persisted for this chat turn.' : 'This agent memory policy does not persist chat turns yet.',
     },
-    toolPolicy: {
-      allowedTools: [],
-      approvalRequired: true,
-      reason: 'No tool allowlist has been granted to this early chat endpoint.',
-    },
+    toolPolicy: policy,
   };
 }
 
@@ -868,6 +1047,7 @@ agentRoutes.post('/create', async (c) => {
     };
 
     const encryptedPrivateKey = encryptPrivateKey(privateKey);
+    const walletPolicy = buildWalletPolicy(input.walletStorage, Boolean(encryptedPrivateKey));
     const registration = await registerAgentOnChain(input, account.address, agentId, metadataUri);
     const initialFunding = await fundAgentWallet(input, account.address);
 
@@ -882,11 +1062,15 @@ agentRoutes.post('/create', async (c) => {
       metadataUri,
       encryptedPrivateKey,
       keyStorage: encryptedPrivateKey ? 'encrypted-memory' : 'not-stored',
+      walletPolicy,
       registration,
       initialFunding,
       promptHash,
       promptTemplate: input.promptTemplate,
       events: [],
+      signingRequests: [],
+      memoryRecords: [],
+      contractWatcher: defaultContractWatcherState(),
       createdAt,
     };
 
@@ -971,6 +1155,114 @@ agentRoutes.patch('/:agentId', async (c) => {
   }
 });
 
+agentRoutes.get('/:agentId/orchestrator/status', (c) => {
+  const { agent } = getAgentOrNotFound(c);
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+  return c.json(orchestratorStatus(agent));
+});
+
+agentRoutes.get('/:agentId/memory', (c) => {
+  const { agent } = getAgentOrNotFound(c);
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+  return c.json({
+    records: agent.memoryRecords,
+    total: agent.memoryRecords.length,
+    privateMemoryExposed: false,
+  });
+});
+
+agentRoutes.get('/:agentId/signing-requests', (c) => {
+  const { agent } = getAgentOrNotFound(c);
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+  return c.json({ signingRequests: agent.signingRequests, total: agent.signingRequests.length });
+});
+
+agentRoutes.post('/:agentId/signing-requests', async (c) => {
+  try {
+    const { agent, agentId } = getAgentOrNotFound(c);
+    if (!agent) return c.json({ error: 'Agent not found' }, 404);
+
+    const input = signingRequestSchema.parse(await c.req.json());
+    const humanApprovalRequired = agent.walletPolicy.humanApprovalRequired || input.risk === 'high' || input.risk === 'critical';
+    const status: AgentSigningRequest['status'] = humanApprovalRequired && !input.humanApproved
+      ? 'pending-human-approval'
+      : 'approved-not-signed';
+    const signingRequest: AgentSigningRequest = {
+      id: `sig_${randomUUID()}`,
+      agentId,
+      action: input.action,
+      to: (input.to as `0x${string}` | undefined) ?? null,
+      valueEth: input.valueEth,
+      data: input.data ?? null,
+      risk: input.risk,
+      reason: input.reason,
+      status,
+      humanApprovalRequired,
+      approvedBy: (input.approvedBy as `0x${string}` | undefined) ?? null,
+      transactionHash: null,
+      createdAt: new Date().toISOString(),
+    };
+
+    agent.signingRequests.push(signingRequest);
+    agent.events.push({
+      id: `evt_${randomUUID()}`,
+      agentId,
+      type: 'runtime.signing_request',
+      actorAddress: signingRequest.approvedBy,
+      payload: {
+        signingRequestId: signingRequest.id,
+        action: signingRequest.action,
+        risk: signingRequest.risk,
+        status: signingRequest.status,
+      },
+      createdAt: signingRequest.createdAt,
+    });
+    agents.set(agentId, agent);
+    persistAgentsToStore();
+
+    return c.json({ signingRequest, walletStorage: agent.walletPolicy.storage }, 202);
+  } catch (error: any) {
+    if (error?.name === 'ZodError') {
+      return c.json({ error: 'Invalid signing request', details: error.issues }, 400);
+    }
+    return c.json({ error: 'Signing request failed', message: error?.message?.substring(0, 240) }, 500);
+  }
+});
+
+agentRoutes.post('/:agentId/contract-events', async (c) => {
+  try {
+    const { agent, agentId } = getAgentOrNotFound(c);
+    if (!agent) return c.json({ error: 'Agent not found' }, 404);
+
+    const input = contractEventSchema.parse(await c.req.json());
+    const eventId = `evt_${randomUUID()}`;
+    const createdAt = new Date().toISOString();
+    agent.events.push({
+      id: eventId,
+      agentId,
+      type: 'contract.event',
+      actorAddress: null,
+      payload: input,
+      createdAt,
+    });
+    agent.contractWatcher = {
+      status: 'connected',
+      lastTransactionHash: input.transactionHash,
+      lastEventName: input.eventName,
+      lastBlockNumber: input.blockNumber ?? null,
+    };
+    agents.set(agentId, agent);
+    persistAgentsToStore();
+
+    return c.json({ accepted: true, eventId, contractWatcher: agent.contractWatcher }, 202);
+  } catch (error: any) {
+    if (error?.name === 'ZodError') {
+      return c.json({ error: 'Invalid contract event', details: error.issues }, 400);
+    }
+    return c.json({ error: 'Contract event ingestion failed', message: error?.message?.substring(0, 240) }, 500);
+  }
+});
+
 /**
  * POST /api/agents/:agentId/chat
  * Early runtime boundary for chatting with an agent before a live orchestrator is attached.
@@ -993,11 +1285,14 @@ agentRoutes.post('/:agentId/chat', async (c) => {
 
     const body = await c.req.json();
     const input = chatTurnSchema.parse(body);
-    const response = buildPendingOrchestratorChatResponse(agent, input);
+    const persistedMemory = shouldPersistCommunityMemory(agent);
+    const response = buildPendingOrchestratorChatResponse(agent, input, persistedMemory);
     const createdAt = new Date().toISOString();
 
+    const userEventId = `evt_${randomUUID()}`;
+    const agentEventId = `evt_${randomUUID()}`;
     agent.events.push({
-      id: `evt_${randomUUID()}`,
+      id: userEventId,
       agentId: agent.agentId,
       type: 'chat.user_message',
       actorAddress: (input.userAddress as `0x${string}` | undefined) ?? null,
@@ -1008,7 +1303,7 @@ agentRoutes.post('/:agentId/chat', async (c) => {
       createdAt,
     });
     agent.events.push({
-      id: `evt_${randomUUID()}`,
+      id: agentEventId,
       agentId: agent.agentId,
       type: 'chat.agent_message',
       actorAddress: agent.walletAddress,
@@ -1020,10 +1315,29 @@ agentRoutes.post('/:agentId/chat', async (c) => {
       },
       createdAt: response.message.createdAt,
     });
+    if (persistedMemory) {
+      addMemoryRecord(agent, {
+        type: 'chat-turn',
+        visibility: 'community',
+        summary: `User said: ${input.message.slice(0, 240)}`,
+        sourceEventId: userEventId,
+      });
+      addMemoryRecord(agent, {
+        type: 'chat-turn',
+        visibility: 'community',
+        summary: `Agent replied with MVP orchestrator boundary message ${response.message.id}.`,
+        sourceEventId: agentEventId,
+      });
+    }
     agents.set(agentId, agent);
     persistAgentsToStore();
 
-    return c.json(response);
+    return c.json({
+      ...response,
+      eventQueue: {
+        depth: agent.events.length,
+      },
+    });
   } catch (error: any) {
     if (error?.name === 'ZodError') {
       return c.json({ error: 'Invalid chat parameters', details: error.issues }, 400);

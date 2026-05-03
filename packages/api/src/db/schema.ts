@@ -8,6 +8,7 @@ export const agents = pgTable('agents', {
   walletAddress: varchar('wallet_address', { length: 42 }).notNull(),
   metadataUri: text('metadata_uri').notNull(),
   keyStorage: text('key_storage').notNull(),
+  walletPolicy: jsonb('wallet_policy').notNull(),
   promptHash: text('prompt_hash').notNull(),
   memoryPolicy: jsonb('memory_policy').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
@@ -65,4 +66,38 @@ export const agentEvents = pgTable('agent_events', {
   actorAddress: varchar('actor_address', { length: 42 }),
   payload: jsonb('payload').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+});
+
+export const agentSigningRequests = pgTable('agent_signing_requests', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull().references(() => agents.agentId, { onDelete: 'cascade' }),
+  action: text('action').notNull(),
+  targetAddress: varchar('target_address', { length: 42 }),
+  valueEth: text('value_eth').notNull(),
+  risk: text('risk').notNull(),
+  status: text('status').notNull(),
+  humanApprovalRequired: boolean('human_approval_required').notNull().default(true),
+  approvedBy: varchar('approved_by', { length: 42 }),
+  transactionHash: text('transaction_hash'),
+  payload: jsonb('payload').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+});
+
+export const agentMemoryRecords = pgTable('agent_memory_records', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull().references(() => agents.agentId, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  visibility: text('visibility').notNull(),
+  summary: text('summary').notNull(),
+  sourceEventId: text('source_event_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+});
+
+export const agentContractWatchers = pgTable('agent_contract_watchers', {
+  agentId: text('agent_id').primaryKey().references(() => agents.agentId, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('reserved'),
+  lastTransactionHash: text('last_transaction_hash'),
+  lastEventName: text('last_event_name'),
+  lastBlockNumber: integer('last_block_number'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
 });

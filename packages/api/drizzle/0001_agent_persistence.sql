@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS agents (
   wallet_address varchar(42) NOT NULL,
   metadata_uri text NOT NULL,
   key_storage text NOT NULL,
+  wallet_policy jsonb NOT NULL,
   prompt_hash text NOT NULL,
   memory_policy jsonb NOT NULL,
   created_at timestamptz NOT NULL
@@ -63,4 +64,38 @@ CREATE TABLE IF NOT EXISTS agent_events (
   actor_address varchar(42),
   payload jsonb NOT NULL,
   created_at timestamptz NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS agent_signing_requests (
+  id text PRIMARY KEY,
+  agent_id text NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
+  action text NOT NULL,
+  target_address varchar(42),
+  value_eth text NOT NULL,
+  risk text NOT NULL,
+  status text NOT NULL,
+  human_approval_required boolean NOT NULL DEFAULT true,
+  approved_by varchar(42),
+  transaction_hash text,
+  payload jsonb NOT NULL,
+  created_at timestamptz NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS agent_memory_records (
+  id text PRIMARY KEY,
+  agent_id text NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
+  type text NOT NULL,
+  visibility text NOT NULL,
+  summary text NOT NULL,
+  source_event_id text,
+  created_at timestamptz NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS agent_contract_watchers (
+  agent_id text PRIMARY KEY REFERENCES agents(agent_id) ON DELETE CASCADE,
+  status text NOT NULL DEFAULT 'reserved',
+  last_transaction_hash text,
+  last_event_name text,
+  last_block_number integer,
+  updated_at timestamptz NOT NULL
 );

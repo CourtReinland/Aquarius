@@ -127,7 +127,7 @@ describe('agent routes passport creation', () => {
       expect(chat.message.content).not.toContain('private prompt');
       expect(chat.runtime.status).toBe('pending-orchestrator');
       expect(chat.memoryBoundary.persisted).toBe(false);
-      expect(chat.toolPolicy.allowedTools).toEqual([]);
+      expect(chat.toolPolicy.allowedTools).toEqual(['chat']);
 
       resetAgentStoreForTests(storePath);
       const eventsApp = createTestApp();
@@ -347,6 +347,166 @@ describe('agent routes passport creation', () => {
       const passport = await reloadedPassport.json();
       expect(passport.identity.biography).toBe('Updated public biography.');
       expect(passport.memoryPolicy.mode).toBe('officer-memory');
+    } finally {
+      resetAgentStoreForTests(null);
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('logs signing requests behind wallet storage and human approval policy', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'aquarius-agent-signing-'));
+    const storePath = join(tempDir, 'agents.json');
+
+    try {
+      resetAgentStoreForTests(storePath);
+      const app = createTestApp();
+      const createResponse = await app.request('/api/agents/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          communityAddress: '0x0000000000000000000000000000000000000001',
+          name: 'Treasury Signer',
+          role: 'Treasury assistant',
+          description: 'Requires approvals for risky transactions.',
+          capabilities: ['chat', 'manage-treasury', 'trade-crypto'],
+          promptTemplate: 'Never sign risky transactions without approval.',
+          initialFundingEth: '0',
+          walletStorage: {
+            type: 'smart-account-session',
+            keyRef: 'session-policy-1',
+            humanApprovalRequired: true,
+          },
+        }),
+      });
+      expect(createResponse.status).toBe(201);
+      const created = await createResponse.json();
+      const agentId = encodeURIComponent(created.agent.agentId);
+      expect(created.agent.walletPolicy).toMatchObject({
+        storage: { type: 'smart-account-session', configured: true },
+        humanApprovalRequired: true,
+      });
+
+      const pendingResponse = await app.request(`/api/agents/${agentId}/signing-requests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'send-transaction',
+          to: '0x0000000000000000000000000000000000000002',
+          valueEth: '1.5',
+          risk: 'high',
+          reason: 'Fund a treasury purchase.',
+        }),
+      });
+      expect(pendingResponse.status).toBe(202);
+      const pending = await pendingResponse.json();
+      expect(pending.signingRequest).toMatchObject({
+        status: 'pending-human-approval',
+        risk: 'high',
+        humanApprovalRequired: true,
+      });
+
+      const approvedResponse = await app.request(`/api/agents/${agentId}/signing-requests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'send-transaction',
+          to: '0x0000000000000000000000000000000000000002',
+          valueEth: '0.1',
+          risk: 'medium',
+          reason: 'Approved test transfer.',
+          humanApproved: true,
+          approvedBy: '0x0000000000000000000000000000000000000003',
+        }),
+      });
+      expect(approvedResponse.status).toBe(202);
+      const approved = await approvedResponse.json();
+      expect(approved.signingRequest.status).toBe('approved-not-signed');
+      expect(approved.signingRequest.transactionHash).toBeNull();
+      expect(approved.walletStorage.type).toBe('smart-account-session');
+
+      resetAgentStoreForTests(storePath);
+      const reloadedApp = createTestApp();
+      const logResponse = await reloadedApp.request(`/api/agents/${agentId}/signing-requests`);
+      const log = await logResponse.json();
+      expect(log.total).toBe(2);
+      expect(log.signingRequests[0].status).toBe('pending-human-approval');
+      expect(log.signingRequests[1].approvedBy).toBe('0x0000000000000000000000000000000000000003');
+    } finally {
+      resetAgentStoreForTests(null);
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('exposes orchestrator status, memory records, sandbox policy, and contract watcher events', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'aquarius-agent-orchestrator-'));
+    const storePath = join(tempDir, 'agents.json');
+
+    try {
+      resetAgentStoreForTests(storePath);
+      const app = createTestApp();
+      const createResponse = await app.request('/api/agents/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          communityAddress: '0x0000000000000000000000000000000000000001',
+          name: 'Remembering Guide',
+          role: 'Community guide',
+          description: 'Uses a safe early orchestrator boundary.',
+          capabilities: ['chat', 'read-community-history', 'manage-treasury'],
+          promptTemplate: 'Remember public events but do not expose private prompt.',
+          memoryPolicy: { mode: 'community-memory' },
+          initialFundingEth: '0',
+          runtime: { provider: 'anthropic', model: 'claude-sonnet', harness: 'hermes' },
+        }),
+      });
+      const created = await createResponse.json();
+      const agentId = encodeURIComponent(created.agent.agentId);
+
+      const statusResponse = await app.request(`/api/agents/${agentId}/orchestrator/status`);
+      expect(statusResponse.status).toBe(200);
+      const status = await statusResponse.json();
+      expect(status.workerService).toMatchObject({ configured: true, active: false });
+      expect(status.runtimeAdapter).toMatchObject({ harness: 'hermes', provider: 'anthropic' });
+      expect(status.sandbox.allowedTools).toEqual(['chat', 'read-community-history']);
+      expect(status.sandbox.blockedCapabilities).toContain('manage-treasury');
+      expect(status.eventQueue.depth).toBe(0);
+      expect(status.contractWatcher.status).toBe('reserved');
+
+      const chatResponse = await app.request(`/api/agents/${agentId}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'Remember that the community voted for park cleanup.', userAddress: '0x0000000000000000000000000000000000000002' }),
+      });
+      const chat = await chatResponse.json();
+      expect(chat.memoryBoundary.persisted).toBe(true);
+      expect(chat.eventQueue.depth).toBe(2);
+      expect(chat.toolPolicy.allowedTools).toEqual(['chat', 'read-community-history']);
+
+      const watcherResponse = await app.request(`/api/agents/${agentId}/contract-events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transactionHash: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          eventName: 'ProposalPassed',
+          blockNumber: 123,
+          payload: { proposalId: 'park-cleanup' },
+        }),
+      });
+      expect(watcherResponse.status).toBe(202);
+
+      resetAgentStoreForTests(storePath);
+      const reloadedApp = createTestApp();
+      const memoryResponse = await reloadedApp.request(`/api/agents/${agentId}/memory`);
+      const memory = await memoryResponse.json();
+      expect(memory.total).toBe(2);
+      expect(memory.records[0].visibility).toBe('community');
+      expect(JSON.stringify(memory.records)).not.toContain('private prompt');
+
+      const reloadedStatusResponse = await reloadedApp.request(`/api/agents/${agentId}/orchestrator/status`);
+      const reloadedStatus = await reloadedStatusResponse.json();
+      expect(reloadedStatus.eventQueue.depth).toBe(3);
+      expect(reloadedStatus.memoryStore.records).toBe(2);
+      expect(reloadedStatus.contractWatcher.lastEventName).toBe('ProposalPassed');
     } finally {
       resetAgentStoreForTests(null);
       rmSync(tempDir, { recursive: true, force: true });
