@@ -34,6 +34,7 @@ export interface CreateAgentParams {
     bodyArchetype?: string | null;
     outfit?: string | null;
     voiceId?: string | null;
+    selfieEndpoint?: string | null;
   };
   personality?: {
     traits?: Record<string, number>;
@@ -46,12 +47,28 @@ export interface CreateAgentParams {
     permissionPolicyUri?: string | null;
     permissionPolicyHash?: string | null;
   };
+  memoryPolicy?: {
+    mode?: 'session-only' | 'personal-companion' | 'community-memory' | 'officer-memory' | 'clone-safe';
+    remembersPrivateChats?: boolean;
+    remembersCommunityEvents?: boolean;
+    cloneSafe?: boolean;
+    retentionDays?: number | null;
+    editableAfterCreation?: boolean;
+  };
+  runtime?: {
+    provider?: string;
+    model?: string;
+    harness?: 'hermes' | 'openclaw' | 'custom';
+  };
   economics?: {
     hireable?: boolean;
     cloneable?: boolean;
     license?: string | null;
     hirePrice?: string | null;
     clonePrice?: string | null;
+    feeRecipient?: string | null;
+    revenueSplitBps?: number | null;
+    feeMode?: 'off-chain' | 'on-chain';
   };
 }
 
@@ -84,18 +101,35 @@ export interface CreatedAgent {
   passport: {
     schemaVersion: 'aquarius.agent-passport.v1';
     identity: {
+      name: string;
+      role: string;
       anthropomorphism: string;
       biography: string;
       pronouns: string | null;
     };
     embodiment: {
       portraitProvider: string;
+      portraitSeed: string | null;
+      avatarUri: string | null;
+      avatarManifestUri: string | null;
+      portraitUri: string | null;
+      voiceId: string | null;
       bodyArchetype: string | null;
       style: string | null;
       outfit: string | null;
     };
     capabilities: {
+      public: string[];
       permissionClass: string;
+    };
+    memoryPolicy: {
+      mode: string;
+      cloneSafe: boolean;
+      remembersPrivateChats: boolean;
+      remembersCommunityEvents: boolean;
+    };
+    personality: {
+      greeting: string | null;
     };
     economics: {
       hireable: boolean;
@@ -113,6 +147,12 @@ export interface CreatedAgent {
 interface CreateAgentResult {
   success: true;
   agent: CreatedAgent;
+  firstMoment?: {
+    introMessage: string;
+    passportUrl: string;
+    portraitStatus: string;
+    suggestedCommunityPost: string;
+  };
   warnings: string[];
 }
 
@@ -149,6 +189,7 @@ export function useAgentCreator() {
   const [isChatting, setIsChatting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [agent, setAgent] = useState<CreatedAgent | null>(null);
+  const [firstMoment, setFirstMoment] = useState<CreateAgentResult['firstMoment'] | null>(null);
   const [chatTurn, setChatTurn] = useState<AgentChatTurn | null>(null);
 
   const createAgent = useCallback(async (params: CreateAgentParams) => {
@@ -171,8 +212,10 @@ export function useAgentCreator() {
         throw new Error(result.error || result.message || `HTTP ${response.status}`);
       }
 
-      const created = (result as CreateAgentResult).agent;
+      const typedResult = result as CreateAgentResult;
+      const created = typedResult.agent;
       setAgent(created);
+      setFirstMoment(typedResult.firstMoment ?? null);
       return created;
     } catch (err: any) {
       const message = err?.message ?? 'Agent creation failed';
@@ -224,6 +267,7 @@ export function useAgentCreator() {
     isChatting,
     error,
     agent,
+    firstMoment,
     chatTurn,
   };
 }

@@ -9,6 +9,7 @@ export const agents = pgTable('agents', {
   metadataUri: text('metadata_uri').notNull(),
   keyStorage: text('key_storage').notNull(),
   promptHash: text('prompt_hash').notNull(),
+  memoryPolicy: jsonb('memory_policy').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
 });
 
@@ -55,4 +56,13 @@ export const agentEconomics = pgTable('agent_economics', {
   revenueSplitBps: integer('revenue_split_bps'),
   feeMode: text('fee_mode').notNull().default('off-chain'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+});
+
+export const agentEvents = pgTable('agent_events', {
+  id: text('id').primaryKey(),
+  agentId: text('agent_id').notNull().references(() => agents.agentId, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  actorAddress: varchar('actor_address', { length: 42 }),
+  payload: jsonb('payload').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
 });

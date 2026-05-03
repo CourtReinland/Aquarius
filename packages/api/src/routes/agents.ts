@@ -27,6 +27,7 @@ import {
   type AgentEconomics,
   type AgentEmbodiment,
   type AgentIdentity,
+  type AgentMemoryPolicy,
   type AgentOrigin,
   type AgentPermissionClass,
   type AgentPersonality,
@@ -75,11 +76,25 @@ const agentRegistrationAbi = [
   },
 ] as const;
 
+const hashSchema = z.string().regex(/^(0x)?[a-fA-F0-9]{64}$/, 'hash must be a 32-byte hex value');
+
 const originSchema = z.object({
   mode: z.enum(['scratch', 'template', 'clone', 'hire', 'import']).default('scratch'),
   parentAgentId: z.string().max(240).nullable().optional(),
   templateId: z.string().max(160).nullable().optional(),
-  lineageHash: z.string().max(128).nullable().optional(),
+  lineageHash: hashSchema.nullable().optional(),
+}).superRefine((origin, ctx) => {
+  if (origin.mode === 'template' && !origin.templateId) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['templateId'], message: 'template origin requires templateId' });
+  }
+
+  if ((origin.mode === 'clone' || origin.mode === 'hire') && !origin.parentAgentId) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['parentAgentId'], message: `${origin.mode} origin requires parentAgentId` });
+  }
+
+  if (origin.mode === 'scratch' && (origin.parentAgentId || origin.templateId)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['mode'], message: 'scratch origin cannot include parentAgentId or templateId' });
+  }
 }).optional();
 
 const identitySchema = z.object({
@@ -111,7 +126,16 @@ const personalitySchema = z.object({
 const permissionPolicySchema = z.object({
   permissionClass: z.enum(['visitor', 'resident', 'worker', 'delegate', 'officer', 'sovereign']).default('worker'),
   permissionPolicyUri: z.string().url().nullable().optional(),
-  permissionPolicyHash: z.string().max(128).nullable().optional(),
+  permissionPolicyHash: hashSchema.nullable().optional(),
+}).optional();
+
+const memoryPolicySchema = z.object({
+  mode: z.enum(['session-only', 'personal-companion', 'community-memory', 'officer-memory', 'clone-safe']).default('session-only'),
+  remembersPrivateChats: z.boolean().optional(),
+  remembersCommunityEvents: z.boolean().optional(),
+  cloneSafe: z.boolean().optional(),
+  retentionDays: z.number().int().min(1).max(3650).nullable().optional(),
+  editableAfterCreation: z.boolean().default(true),
 }).optional();
 
 const economicsSchema = z.object({
@@ -150,6 +174,7 @@ const createAgentSchema = z.object({
   identity: identitySchema,
   embodiment: embodimentSchema,
   personality: personalitySchema,
+  memoryPolicy: memoryPolicySchema,
   permissionPolicy: permissionPolicySchema,
   economics: economicsSchema,
 });
@@ -241,6 +266,13 @@ interface FundingResult {
   reason?: string;
 }
 
+interface FirstMoment {
+  introMessage: string;
+  passportUrl: string;
+  portraitStatus: 'pending-media-service' | 'configured';
+  suggestedCommunityPost: string;
+}
+
 const DEFAULT_AGENT_STORE_FILE = fileURLToPath(new URL('../../data/agents.json', import.meta.url));
 let agentStoreFile: string | null = process.env.AGENT_STORE_FILE ?? DEFAULT_AGENT_STORE_FILE;
 let agents = loadAgentsFromStore();
@@ -318,6 +350,19 @@ function safeAgent(agent: StoredAgent) {
   return {
     ...publicAgent,
     hasEncryptedKey: Boolean(encryptedPrivateKey),
+  };
+}
+
+function buildFirstMoment(agent: StoredAgent): FirstMoment {
+  const greeting = agent.passport.personality.greeting?.trim();
+  const role = agent.passport.identity.role || 'community agent';
+  const introMessage = greeting || `Hello, I am ${agent.passport.identity.name}, a ${role} for ${agent.communityName ?? 'this community'}.`;
+
+  return {
+    introMessage,
+    passportUrl: agent.metadataUri,
+    portraitStatus: agent.passport.embodiment.portraitUri ? 'configured' : 'pending-media-service',
+    suggestedCommunityPost: `${introMessage} My public passport is available at ${agent.metadataUri}`,
   };
 }
 
@@ -518,6 +563,18 @@ function buildAgentPassport(input: CreateAgentInput, params: {
     traits: input.personality?.traits ?? defaults.personality.traits,
   };
 
+  const memoryPolicy: AgentMemoryPolicy = {
+    ...defaults.memoryPolicy,
+    ...input.memoryPolicy,
+    remembersPrivateChats: input.memoryPolicy?.remembersPrivateChats
+      ?? (input.memoryPolicy?.mode === 'personal-companion' || input.memoryPolicy?.mode === 'officer-memory'),
+    remembersCommunityEvents: input.memoryPolicy?.remembersCommunityEvents
+      ?? (input.memoryPolicy?.mode === 'community-memory' || input.memoryPolicy?.mode === 'officer-memory'),
+    cloneSafe: input.memoryPolicy?.cloneSafe ?? (input.memoryPolicy?.mode === 'clone-safe' || defaults.memoryPolicy.cloneSafe),
+    retentionDays: input.memoryPolicy?.retentionDays ?? defaults.memoryPolicy.retentionDays,
+    editableAfterCreation: input.memoryPolicy?.editableAfterCreation ?? defaults.memoryPolicy.editableAfterCreation,
+  };
+
   const capabilities: AgentCapabilities = {
     public: input.capabilities,
     permissionClass: input.permissionPolicy?.permissionClass ?? defaults.capabilities.permissionClass,
@@ -545,6 +602,7 @@ function buildAgentPassport(input: CreateAgentInput, params: {
     identity,
     embodiment,
     personality,
+    memoryPolicy,
     capabilities,
     wallet: {
       type: defaults.wallet.type,
@@ -674,6 +732,7 @@ agentRoutes.post('/create', async (c) => {
     return c.json({
       success: true,
       agent: safeAgent(storedAgent),
+      firstMoment: buildFirstMoment(storedAgent),
       warnings: encryptedPrivateKey
         ? []
         : ['AGENT_KEY_ENCRYPTION_SECRET is not set; private key was not persisted by the API process'],
@@ -769,6 +828,63 @@ agentRoutes.post('/:agentId/chat', async (c) => {
       message: error?.message?.substring(0, 240),
     }, 500);
   }
+});
+
+function getAgentOrNotFound(c: any) {
+  const agentId = decodeURIComponent(c.req.param('agentId'));
+  const agent = agents.get(agentId);
+  if (!agent) return { agentId, agent: null };
+  return { agentId, agent };
+}
+
+agentRoutes.all('/:agentId/a2a', (c) => {
+  const { agent, agentId } = getAgentOrNotFound(c);
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+
+  return c.json({
+    agentId,
+    status: agent.passport.runtime.status,
+    endpoint: 'a2a',
+    available: false,
+    reason: 'The Agent Foundry has reserved this A2A endpoint, but the live orchestrator is not attached yet.',
+    runtime: agent.passport.runtime,
+    policy: {
+      allowedTools: [],
+      approvalRequired: true,
+    },
+  }, 202);
+});
+
+agentRoutes.all('/:agentId/mcp', (c) => {
+  const { agent, agentId } = getAgentOrNotFound(c);
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+
+  return c.json({
+    agentId,
+    status: agent.passport.runtime.status,
+    endpoint: 'mcp',
+    available: false,
+    reason: 'The Agent Foundry has reserved this MCP endpoint, but no sandboxed tool server is connected yet.',
+    toolPolicy: {
+      allowedTools: [],
+      approvalRequired: true,
+    },
+  }, 202);
+});
+
+agentRoutes.post('/:agentId/selfies', (c) => {
+  const { agent, agentId } = getAgentOrNotFound(c);
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+
+  return c.json({
+    agentId,
+    status: 'media-service-not-connected',
+    generatedMedia: false,
+    consentRequired: true,
+    labelRequired: true,
+    portraitProvider: agent.passport.embodiment.portraitProvider,
+    reason: 'Gemini / nano-banana portrait generation is planned, but no media worker is connected in this MVP.',
+  }, 202);
 });
 
 /**

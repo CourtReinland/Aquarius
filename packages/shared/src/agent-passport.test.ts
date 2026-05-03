@@ -15,5 +15,12 @@ describe('agent passport shared defaults', () => {
     expect(defaults.embodiment.portraitProvider).toBe('gemini-nano-banana');
     expect(defaults.economics.feeMode).toBe('off-chain');
     expect(defaults.identity.anthropomorphism).toBe('agent-discretion');
+    expect(defaults.memoryPolicy).toMatchObject({
+      mode: 'session-only',
+      remembersPrivateChats: false,
+      remembersCommunityEvents: false,
+      cloneSafe: true,
+      editableAfterCreation: true,
+    });
   });
 });

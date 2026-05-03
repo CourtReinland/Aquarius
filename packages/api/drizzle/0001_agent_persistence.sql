@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS agents (
   metadata_uri text NOT NULL,
   key_storage text NOT NULL,
   prompt_hash text NOT NULL,
+  memory_policy jsonb NOT NULL,
   created_at timestamptz NOT NULL
 );
 
@@ -53,4 +54,13 @@ CREATE TABLE IF NOT EXISTS agent_economics (
   revenue_split_bps integer,
   fee_mode text NOT NULL DEFAULT 'off-chain',
   updated_at timestamptz NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS agent_events (
+  id text PRIMARY KEY,
+  agent_id text NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
+  type text NOT NULL,
+  actor_address varchar(42),
+  payload jsonb NOT NULL,
+  created_at timestamptz NOT NULL
 );

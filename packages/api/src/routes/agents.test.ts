@@ -42,6 +42,7 @@ describe('agent routes passport creation', () => {
           description: 'Keeps community memory.',
           capabilities: ['chat'],
           promptTemplate: 'Remember public community events.',
+          memoryPolicy: { mode: 'community-memory' },
           initialFundingEth: '0',
         }),
       });
@@ -55,6 +56,11 @@ describe('agent routes passport creation', () => {
       expect(passportResponse.status).toBe(200);
       const passport = await passportResponse.json();
       expect(passport.identity.name).toBe('Archivist Otter');
+      expect(passport.memoryPolicy).toMatchObject({
+        mode: 'community-memory',
+        remembersCommunityEvents: true,
+        cloneSafe: true,
+      });
 
       const listResponse = await secondApp.request('/api/agents?communityAddress=0x0000000000000000000000000000000000000001');
       const listBody = await listResponse.json();
@@ -166,6 +172,11 @@ describe('agent routes passport creation', () => {
           traits: { warmth: 0.92, caution: 0.76 },
           greeting: 'Hi, I am Luna. I will keep the treasury understandable.',
         },
+        memoryPolicy: {
+          mode: 'clone-safe',
+          remembersPrivateChats: false,
+          remembersCommunityEvents: true,
+        },
         permissionPolicy: {
           permissionClass: 'delegate',
         },
@@ -203,6 +214,16 @@ describe('agent routes passport creation', () => {
       outfit: 'teal treasurer jacket',
     });
     expect(passport.personality.traits.warmth).toBe(0.92);
+    expect(passport.memoryPolicy).toMatchObject({
+      mode: 'clone-safe',
+      remembersPrivateChats: false,
+      remembersCommunityEvents: true,
+      cloneSafe: true,
+      editableAfterCreation: true,
+    });
+    expect(JSON.stringify(passport)).not.toContain('Help the community understand treasury proposals.');
+    expect(body.firstMoment.introMessage).toContain('Luna');
+    expect(body.firstMoment.passportUrl).toBe(body.agent.metadataUri);
     expect(passport.capabilities).toMatchObject({
       public: ['chat', 'monitor-proposals'],
       permissionClass: 'delegate',
@@ -215,5 +236,72 @@ describe('agent routes passport creation', () => {
       feeMode: 'off-chain',
     });
     expect(passport.runtime.endpoints.passport).toContain('/passport');
+  });
+
+  it('rejects under-specified non-scratch origins and malformed policy hashes', async () => {
+    const app = createTestApp();
+    const basePayload = {
+      communityAddress: '0x0000000000000000000000000000000000000001',
+      name: 'Invalid Origin Agent',
+      role: 'Scout',
+      description: 'Should not be created.',
+      capabilities: ['chat'],
+      promptTemplate: 'Stay safe.',
+      initialFundingEth: '0',
+    };
+
+    const cloneResponse = await app.request('/api/agents/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...basePayload, origin: { mode: 'clone' } }),
+    });
+    expect(cloneResponse.status).toBe(400);
+
+    const hashResponse = await app.request('/api/agents/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...basePayload,
+        name: 'Invalid Hash Agent',
+        permissionPolicy: { permissionPolicyHash: 'not-a-hash' },
+      }),
+    });
+    expect(hashResponse.status).toBe(400);
+  });
+
+  it('serves structured placeholders for advertised A2A, MCP, and selfie endpoints', async () => {
+    const app = createTestApp();
+    const response = await app.request('/api/agents/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        communityAddress: '0x0000000000000000000000000000000000000001',
+        name: 'Endpoint Fox',
+        role: 'Runtime tester',
+        description: 'Checks endpoint affordances.',
+        capabilities: ['chat'],
+        promptTemplate: 'Expose safe placeholder endpoints only.',
+        initialFundingEth: '0',
+      }),
+    });
+    const created = await response.json();
+    const agentId = encodeURIComponent(created.agent.agentId);
+
+    const a2a = await app.request(`/api/agents/${agentId}/a2a`);
+    expect(a2a.status).toBe(202);
+    expect(await a2a.json()).toMatchObject({ endpoint: 'a2a', available: false });
+
+    const mcp = await app.request(`/api/agents/${agentId}/mcp`);
+    expect(mcp.status).toBe(202);
+    expect(await mcp.json()).toMatchObject({ endpoint: 'mcp', available: false });
+
+    const selfie = await app.request(`/api/agents/${agentId}/selfies`, { method: 'POST' });
+    expect(selfie.status).toBe(202);
+    expect(await selfie.json()).toMatchObject({
+      status: 'media-service-not-connected',
+      generatedMedia: false,
+      consentRequired: true,
+      labelRequired: true,
+    });
   });
 });

@@ -6,6 +6,7 @@ export type AgentOriginMode = 'scratch' | 'template' | 'clone' | 'hire' | 'impor
 export type AgentRuntimeHarness = 'hermes' | 'openclaw' | 'custom';
 export type AgentRuntimeStatus = 'pending-orchestrator' | 'active' | 'dormant' | 'suspended';
 export type AgentPermissionClass = 'visitor' | 'resident' | 'worker' | 'delegate' | 'officer' | 'sovereign';
+export type AgentMemoryMode = 'session-only' | 'personal-companion' | 'community-memory' | 'officer-memory' | 'clone-safe';
 export type AgentWalletType = 'EOA' | 'ERC-4337' | 'contract';
 export type AnthropomorphismLevel = 'minimal' | 'balanced' | 'high' | 'agent-discretion';
 export type AgentFeeMode = 'off-chain' | 'on-chain';
@@ -44,6 +45,15 @@ export interface AgentPersonality {
   greeting: string | null;
   refusalStyle: string | null;
   conflictStyle: string | null;
+}
+
+export interface AgentMemoryPolicy {
+  mode: AgentMemoryMode;
+  remembersPrivateChats: boolean;
+  remembersCommunityEvents: boolean;
+  cloneSafe: boolean;
+  retentionDays: number | null;
+  editableAfterCreation: boolean;
 }
 
 export interface AgentCapabilities {
@@ -105,6 +115,7 @@ export interface AquariusAgentPassportV1 {
   identity: AgentIdentity;
   embodiment: AgentEmbodiment;
   personality: AgentPersonality;
+  memoryPolicy: AgentMemoryPolicy;
   capabilities: AgentCapabilities;
   wallet: AgentWallet;
   runtime: AgentRuntime;
@@ -119,6 +130,7 @@ export interface DefaultAgentPassportInput {
   identity: Pick<AgentIdentity, 'biography' | 'pronouns' | 'anthropomorphism'>;
   embodiment: AgentEmbodiment;
   personality: AgentPersonality;
+  memoryPolicy: AgentMemoryPolicy;
   capabilities: Pick<AgentCapabilities, 'permissionClass' | 'permissionPolicyUri' | 'permissionPolicyHash'>;
   wallet: Pick<AgentWallet, 'type'>;
   economics: AgentEconomics;
@@ -155,6 +167,14 @@ export function createDefaultAgentPassportInput(): DefaultAgentPassportInput {
       greeting: null,
       refusalStyle: null,
       conflictStyle: null,
+    },
+    memoryPolicy: {
+      mode: 'session-only',
+      remembersPrivateChats: false,
+      remembersCommunityEvents: false,
+      cloneSafe: true,
+      retentionDays: null,
+      editableAfterCreation: true,
     },
     capabilities: {
       permissionClass: 'worker',
