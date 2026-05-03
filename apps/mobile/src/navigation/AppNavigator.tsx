@@ -26,7 +26,7 @@ export type RootStackParamList = {
   FoundCommunity: undefined;
   FoundCommunitySuccess: { name: string; address: string; txHash: string };
   CommunityDashboard: { address: string };
-  CreateAIAgent: { communityAddress: string; communityName: string; creatorAddress?: string };
+  CreateAIAgent: { communityAddress?: string; communityName?: string; creatorAddress?: string } | undefined;
   BankingSetup: { communityAddress?: string };
   CongratsRole: undefined;
   ApproveAlliance: undefined;
@@ -137,7 +137,19 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export function AppNavigator() {
   return (
-    <NavigationContainer>
+    <NavigationContainer
+      linking={{
+        prefixes: ['http://localhost:8083', 'aquarius://'],
+        config: {
+          screens: {
+            Home: '',
+            MainTabs: 'communities',
+            FoundCommunity: 'found-community',
+            CreateAIAgent: 'agent-foundry',
+          },
+        },
+      }}
+    >
       <Stack.Navigator
         initialRouteName="Home"
         screenOptions={{
@@ -176,6 +188,10 @@ export function AppNavigator() {
           name="CreateAIAgent"
           component={CreateAIAgent}
           options={{ title: 'Create AI Agent' }}
+          initialParams={{
+            communityAddress: '0x0000000000000000000000000000000000000001',
+            communityName: 'Agent Foundry Preview',
+          }}
         />
         <Stack.Screen
           name="BankingSetup"

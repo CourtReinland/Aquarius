@@ -35,6 +35,18 @@ export function HomeScreen({ navigation }: Props) {
       {/* Action buttons - only enabled when wallet is connected */}
       <View style={styles.buttonContainer}>
         <TouchableOpacity
+          style={styles.foundryButton}
+          onPress={() => navigation.navigate('CreateAIAgent', {
+            communityAddress: '0x0000000000000000000000000000000000000001',
+            communityName: 'Agent Foundry Preview',
+          })}
+        >
+          <Text style={styles.foundryEyebrow}>NEW</Text>
+          <Text style={styles.foundryButtonText}>Open Agent Foundry</Text>
+          <Text style={styles.foundrySubtext}>Create an embodied AI community member</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={[styles.primaryButton, !isConnected && styles.buttonDisabled]}
           onPress={() => navigation.navigate('MainTabs')}
           disabled={!isConnected}
@@ -93,6 +105,36 @@ const styles = StyleSheet.create({
   buttonContainer: {
     width: '100%',
     gap: 16,
+  },
+  foundryButton: {
+    backgroundColor: '#10201F',
+    borderWidth: 1,
+    borderColor: '#4ECDC4',
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    alignItems: 'center',
+    shadowColor: '#4ECDC4',
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+  },
+  foundryEyebrow: {
+    color: '#F0B429',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 2,
+    marginBottom: 4,
+  },
+  foundryButtonText: {
+    color: '#4ECDC4',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  foundrySubtext: {
+    color: '#8B949E',
+    fontSize: 12,
+    marginTop: 4,
+    textAlign: 'center',
   },
   primaryButton: {
     backgroundColor: '#4ECDC4',

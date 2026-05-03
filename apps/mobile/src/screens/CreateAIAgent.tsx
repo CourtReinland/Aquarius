@@ -19,6 +19,11 @@ type FoundryStep = 'identity' | 'body' | 'permissions';
 
 const FOUNDRY_STEPS: FoundryStep[] = ['identity', 'body', 'permissions'];
 
+const PREVIEW_COMMUNITY = {
+  communityAddress: '0x0000000000000000000000000000000000000001',
+  communityName: 'Agent Foundry Preview',
+};
+
 const CAPABILITY_CHOICES = [
   { id: 'vote', label: 'Vote' },
   { id: 'chat', label: 'Chat' },
@@ -29,7 +34,9 @@ const CAPABILITY_CHOICES = [
 ];
 
 export function CreateAIAgent({ route }: Props) {
-  const { communityAddress, communityName, creatorAddress } = route.params;
+  const communityAddress = route.params?.communityAddress ?? PREVIEW_COMMUNITY.communityAddress;
+  const communityName = route.params?.communityName ?? PREVIEW_COMMUNITY.communityName;
+  const creatorAddress = route.params?.creatorAddress;
   const { createAgent, isCreating, error, agent } = useAgentCreator();
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
