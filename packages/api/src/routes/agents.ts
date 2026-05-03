@@ -156,6 +156,14 @@ const createAgentSchema = z.object({
 
 type CreateAgentInput = z.infer<typeof createAgentSchema>;
 
+const chatTurnSchema = z.object({
+  message: z.string().min(1).max(4000),
+  userAddress: z.string().refine(isAddress, 'userAddress must be an EVM address').optional(),
+  sessionId: z.string().max(160).optional(),
+});
+
+type ChatTurnInput = z.infer<typeof chatTurnSchema>;
+
 interface StoredAgent {
   agentId: string;
   communityAddress: `0x${string}`;
@@ -300,6 +308,44 @@ function safeAgent(agent: StoredAgent) {
   return {
     ...publicAgent,
     hasEncryptedKey: Boolean(encryptedPrivateKey),
+  };
+}
+
+function buildPendingOrchestratorChatResponse(agent: StoredAgent, input: ChatTurnInput) {
+  const greeting = agent.passport.personality.greeting;
+  const intro = greeting ? `${greeting} ` : `I am ${agent.passport.identity.name}. `;
+  const runtime = agent.passport.runtime;
+
+  return {
+    success: true,
+    agentId: agent.agentId,
+    sessionId: input.sessionId ?? `session_${randomUUID()}`,
+    received: {
+      role: 'user',
+      content: input.message,
+      userAddress: input.userAddress ?? null,
+    },
+    message: {
+      id: `msg_${randomUUID()}`,
+      role: 'agent',
+      content: `${intro}${agent.passport.identity.name} is registered and reachable, but the live ${runtime.harness} orchestrator is not attached yet. This endpoint is the safe chat boundary for the upcoming runtime: it can identify the agent, preserve public personality fields, and keep hidden instructions, keys, and memory sealed.`,
+      createdAt: new Date().toISOString(),
+    },
+    runtime: {
+      harness: runtime.harness,
+      provider: runtime.provider,
+      model: runtime.model,
+      status: runtime.status,
+    },
+    memoryBoundary: {
+      persisted: false,
+      reason: 'Durable private memory store is not enabled for chat turns yet.',
+    },
+    toolPolicy: {
+      allowedTools: [],
+      approvalRequired: true,
+      reason: 'No tool allowlist has been granted to this early chat endpoint.',
+    },
   };
 }
 
@@ -647,6 +693,42 @@ agentRoutes.get('/', (c) => {
     agents: list,
     total: list.length,
   });
+});
+
+/**
+ * POST /api/agents/:agentId/chat
+ * Early runtime boundary for chatting with an agent before a live orchestrator is attached.
+ */
+agentRoutes.post('/:agentId/chat', async (c) => {
+  try {
+    const agentId = decodeURIComponent(c.req.param('agentId'));
+    const agent = agents.get(agentId);
+
+    if (!agent) {
+      return c.json({ error: 'Agent not found' }, 404);
+    }
+
+    if (!agent.passport.capabilities.public.includes('chat')) {
+      return c.json({
+        error: 'Chat not allowed',
+        message: 'This agent passport does not advertise the chat capability.',
+      }, 403);
+    }
+
+    const body = await c.req.json();
+    const input = chatTurnSchema.parse(body);
+
+    return c.json(buildPendingOrchestratorChatResponse(agent, input));
+  } catch (error: any) {
+    if (error?.name === 'ZodError') {
+      return c.json({ error: 'Invalid chat parameters', details: error.issues }, 400);
+    }
+
+    return c.json({
+      error: 'Agent chat failed',
+      message: error?.message?.substring(0, 240),
+    }, 500);
+  }
 });
 
 /**
