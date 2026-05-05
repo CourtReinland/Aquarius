@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { WalletConnect } from '../components/WalletConnect';
+import { BlueAssistantAvatar } from '../components/blue';
 import { useWalletStore } from '../hooks/useWalletStore';
 
 type Props = {
@@ -20,56 +21,53 @@ export function HomeScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.logoContainer}>
-        <Text style={styles.logoText}>AQUARIUS</Text>
-        <Text style={styles.tagline}>
-          Community Governance on the Blockchain
-        </Text>
+      <View style={styles.blueStage}>
+        <BlueAssistantAvatar
+          state="speaking"
+          speechText="Hi, I'm Blue. I'm here to help you get set up. Would you like to found a community or join an existing one?"
+          size={236}
+          caption="Hi, I'm Blue. I'm here to help you get set up."
+        />
       </View>
 
-      {/* Wallet connection */}
+      <View style={styles.choiceCard}>
+        <Text style={styles.choicePrompt}>Would you like to found a community or join an existing one?</Text>
+        <View style={styles.primaryChoices}>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => navigation.navigate('FoundCommunity')}
+          >
+            <Text style={styles.primaryButtonText}>Found Community</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => navigation.navigate('MainTabs')}
+          >
+            <Text style={styles.secondaryButtonText}>Join Community</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
       <View style={styles.walletSection}>
         <WalletConnect />
       </View>
 
-      {/* Action buttons - only enabled when wallet is connected */}
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity
-          style={styles.foundryButton}
-          onPress={() => navigation.navigate('CreateAIAgent', {
-            communityAddress: '0x0000000000000000000000000000000000000001',
-            communityName: 'Agent Foundry Preview',
-          })}
-        >
-          <Text style={styles.foundryEyebrow}>NEW</Text>
-          <Text style={styles.foundryButtonText}>Open Agent Foundry</Text>
-          <Text style={styles.foundrySubtext}>Create an embodied AI community member</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.primaryButton, !isConnected && styles.buttonDisabled]}
-          onPress={() => navigation.navigate('MainTabs')}
-          disabled={!isConnected}
-        >
-          <Text style={[styles.primaryButtonText, !isConnected && styles.textDisabled]}>
-            Explore Communities
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.secondaryButton, !isConnected && styles.buttonDisabled]}
-          onPress={() => navigation.navigate('FoundCommunity')}
-          disabled={!isConnected}
-        >
-          <Text style={[styles.secondaryButtonText, !isConnected && styles.textDisabled]}>
-            + Found Community
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity
+        style={styles.foundryButton}
+        onPress={() => navigation.navigate('CreateAIAgent', {
+          communityAddress: '0x0000000000000000000000000000000000000001',
+          communityName: 'Agent Foundry Preview',
+        })}
+      >
+        <Text style={styles.foundryEyebrow}>ADVANCED</Text>
+        <Text style={styles.foundryButtonText}>Open Agent Foundry</Text>
+        <Text style={styles.foundrySubtext}>Customize Blue's agents under the hood</Text>
+      </TouchableOpacity>
 
       {!isConnected && (
         <Text style={styles.connectPrompt}>
-          Connect a wallet to get started
+          You can look around now. Connect a wallet before creating on-chain records.
         </Text>
       )}
     </SafeAreaView>
@@ -79,32 +77,34 @@ export function HomeScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0D1117',
+    backgroundColor: '#050B1A',
     justifyContent: 'center',
     padding: 24,
   },
-  logoContainer: {
+  blueStage: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 22,
   },
-  logoText: {
-    fontSize: 42,
-    fontWeight: '200',
-    color: '#4ECDC4',
-    letterSpacing: 12,
-    marginBottom: 12,
+  choiceCard: {
+    backgroundColor: 'rgba(13, 17, 23, 0.92)',
+    borderWidth: 1,
+    borderColor: '#263B5E',
+    borderRadius: 22,
+    padding: 18,
+    marginBottom: 18,
   },
-  tagline: {
-    fontSize: 14,
-    color: '#8B949E',
+  choicePrompt: {
+    color: '#DCEBFF',
+    fontSize: 17,
+    lineHeight: 24,
     textAlign: 'center',
+    marginBottom: 16,
+  },
+  primaryChoices: {
+    gap: 12,
   },
   walletSection: {
-    marginBottom: 32,
-  },
-  buttonContainer: {
-    width: '100%',
-    gap: 16,
+    marginBottom: 16,
   },
   foundryButton: {
     backgroundColor: '#10201F',
