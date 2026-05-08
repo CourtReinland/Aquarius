@@ -43,6 +43,10 @@ export const BLUE_AVATAR_FRAMEWORK = {
     renderer: 'react-native-reanimated-2d',
     reason: 'Uses the provided Blue portrait immediately on mobile, with smooth native-thread idle motion and mouth cues.',
   },
+  background: {
+    renderer: 'three-js-canvas',
+    reason: 'A lightweight Three.js starfield/constellation canvas gives the first-run OS shell a living surface without server video.',
+  },
   future: {
     renderer: 'react-three-fiber-vrm',
     reason: 'When a VRM/GLB rig exists, the same cue model can drive @react-three/fiber, @pixiv/three-vrm, and morph-target visemes.',
@@ -50,6 +54,22 @@ export const BLUE_AVATAR_FRAMEWORK = {
   lipSync: {
     visemeStrategy: 'viseme-ready-mouth-cues',
     fallback: 'text-and-audio-level procedural mouth frames',
+  },
+} as const;
+
+export const BLUE_ONBOARDING_SCENE = {
+  fontFamily: 'Roboto Mono',
+  background: {
+    renderer: 'three-js-canvas',
+    motion: 'subtle-parallax',
+    palette: ['#050B1A', '#071B33', '#8EC5FF', '#DCEBFF'],
+  },
+  avatar: {
+    placement: 'lower-left-cinematic-crop',
+    motion: 'breathing-float-and-lipsync',
+  },
+  menu: {
+    copy: ['1. Found Community', '2. Join Community'],
   },
 } as const;
 

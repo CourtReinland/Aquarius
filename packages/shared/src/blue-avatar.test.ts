@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BLUE_AVATAR_FRAMEWORK,
   BLUE_AVATAR_STATES,
+  BLUE_ONBOARDING_SCENE,
   createBlueAvatarCue,
   getBlueMouthFrame,
 } from './blue-avatar';
@@ -33,5 +34,13 @@ describe('Blue avatar framework', () => {
     expect(textDriven.openness).toBeGreaterThan(0);
     expect(audioDriven.openness).toBeGreaterThan(textDriven.openness);
     expect(audioDriven.openness).toBeLessThanOrEqual(0.72);
+  });
+
+  it('describes the full-screen Blue onboarding scene', () => {
+    expect(BLUE_ONBOARDING_SCENE.fontFamily).toContain('Roboto Mono');
+    expect(BLUE_ONBOARDING_SCENE.background.renderer).toBe('three-js-canvas');
+    expect(BLUE_ONBOARDING_SCENE.background.motion).toBe('subtle-parallax');
+    expect(BLUE_ONBOARDING_SCENE.avatar.placement).toBe('lower-left-cinematic-crop');
+    expect(BLUE_ONBOARDING_SCENE.menu.copy).toEqual(['1. Found Community', '2. Join Community']);
   });
 });
