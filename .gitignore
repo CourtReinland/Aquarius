@@ -48,3 +48,4 @@ create-linear-tickets.sh
 
 # Local chain state snapshots
 .anvil/
+packages/api/.data/

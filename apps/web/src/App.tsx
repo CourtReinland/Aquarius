@@ -12,16 +12,22 @@ import { Memberships } from './pages/Memberships';
 import { Banking } from './pages/Banking';
 import { useWalletStore } from './state/walletStore';
 import { useBlueStore } from './state/blueStore';
+import { useCommunityWatcher } from './hooks/useCommunityWatcher';
 import { eventScript } from './blue/script';
 
 function BlueWithActions() {
   const navigate = useNavigate();
   const { adoptIdentity } = useWalletStore();
   const blue = useBlueStore();
+  useCommunityWatcher(); // every device senses new worlds landing on-chain
 
   return (
     <BlueCompanion
       onAction={(action) => {
+        if (action.startsWith('visit:')) {
+          navigate(`/community/${action.slice(6)}`);
+          return;
+        }
         switch (action) {
           case 'generate-wallet': {
             const addr = adoptIdentity(); // random free identity

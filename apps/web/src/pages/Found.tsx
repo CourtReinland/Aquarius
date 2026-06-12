@@ -4,6 +4,8 @@ import { useWalletStore } from '../state/walletStore';
 import { useBlueStore } from '../state/blueStore';
 import { eventScript } from '../blue/script';
 import { createCommunityOnChain } from '../lib/actions';
+import { announceCommunity } from '../lib/registry';
+import { useChainBus } from '../state/chainBus';
 import {
   emptyWizard,
   MemberAdmission,
@@ -29,8 +31,11 @@ export function Found() {
   const blue = useBlueStore();
   const [step, setStep] = useState(1);
   const [wizard, setWizard] = useState<CommunityWizardState>({ ...emptyWizard });
+  const [visibility, setVisibility] = useState<'public' | 'unlisted'>('public');
+  const [pitch, setPitch] = useState('');
   const [deploying, setDeploying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const bump = useChainBus((s) => s.bump);
 
   const up = (fields: Partial<CommunityWizardState>) =>
     setWizard((prev) => ({ ...prev, ...fields }));
@@ -67,6 +72,16 @@ export function Found() {
     blue.say(eventScript.deployStarted(), { mood: 'thinking' });
     try {
       const result = await createCommunityOnChain(privateKey, wizard);
+      // publish the social announcement so the rest of the network hears about it
+      await announceCommunity({
+        address: result.communityAddress,
+        name: wizard.name,
+        visibility,
+        seekingMembers: visibility === 'public',
+        pitch,
+        founder: address,
+      });
+      bump();
       blue.celebrate(eventScript.deploySuccess(wizard.name));
       navigate(
         `/success?name=${encodeURIComponent(wizard.name)}&address=${result.communityAddress}&tx=${result.txHash}`
@@ -268,6 +283,39 @@ export function Found() {
               </button>
             ))}
 
+            <label className="label">Visibility on the network</label>
+            {(
+              [
+                ['public', 'Public — seeking members', 'Announced to every connected device; listed as recruiting'],
+                ['unlisted', 'Quiet — on-chain only', 'No announcement; discoverable only by address'],
+              ] as const
+            ).map(([val, title, hint]) => (
+              <button
+                key={val}
+                className={`option ${visibility === val ? 'selected' : ''}`}
+                onClick={() => setVisibility(val)}
+              >
+                <span className="tick">✓</span>
+                <span>
+                  {title}
+                  <span className="option-hint"> — {hint}</span>
+                </span>
+              </button>
+            ))}
+
+            {visibility === 'public' && (
+              <>
+                <label className="label">Founding pitch (what should the network hear?)</label>
+                <input
+                  className="input"
+                  placeholder="e.g. Skaters and builders wanted — first 10 members get founding shares"
+                  maxLength={280}
+                  value={pitch}
+                  onChange={(e) => setPitch(e.target.value)}
+                />
+              </>
+            )}
+
             <div className="found-summary mono">
               <div className="found-summary-title">GENESIS SUMMARY</div>
               <div>name: {wizard.name || '—'}</div>
@@ -275,6 +323,7 @@ export function Found() {
               <div>charter: {wizard.charterTemplate}</div>
               <div>admission: {wizard.admissionRule === 0 ? 'founders only' : 'founders + members'} @ {wizard.votePercentage}%</div>
               <div>law: {wizard.legalFramework || 'none'} / {wizard.jurisdiction || 'unspecified'}</div>
+              <div>visibility: {visibility === 'public' ? 'public · seeking members' : 'quiet · on-chain only'}</div>
             </div>
           </>
         )}

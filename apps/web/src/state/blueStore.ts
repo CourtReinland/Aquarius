@@ -31,6 +31,7 @@ interface BlueState {
   busy: boolean; // currently typing out a message
 
   say: (msg: string | string[], opts?: Partial<Omit<BlueMessage, 'text'>>) => void;
+  interrupt: (msg: string, opts?: Partial<Omit<BlueMessage, 'text'>>) => void;
   next: () => void;
   setBusy: (b: boolean) => void;
   think: (on: boolean) => void;
@@ -84,6 +85,16 @@ export const useBlueStore = create<BlueState>((set, get) => ({
   setBusy: (busy) => set({ busy }),
 
   think: (on) => set({ mood: on ? 'thinking' : 'idle' }),
+
+  /** Network news — replaces idle chatter immediately instead of queueing. */
+  interrupt: (msg, opts = {}) => {
+    set({
+      current: { text: msg, mood: opts.mood ?? 'talking', chips: opts.chips },
+      queue: [],
+      mood: opts.mood ?? 'talking',
+      unread: get().minimized,
+    });
+  },
 
   celebrate: (msg, chips) => {
     set({ current: { text: msg, mood: 'celebrating', chips }, queue: [], mood: 'celebrating', unread: get().minimized });
