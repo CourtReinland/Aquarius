@@ -1,0 +1,86 @@
+.shell-top {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 12px 24px;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+}
+
+.shell-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+.shell-logo {
+  font-size: 20px;
+  background: var(--grad-found);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.shell-word {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.22em;
+  color: var(--ink);
+}
+
+.shell-nav {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  justify-content: center;
+}
+.shell-link {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink-dim);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 999px;
+  transition: color 0.15s, background 0.15s;
+}
+.shell-link-icon { font-size: 15px; }
+.shell-link:hover { color: var(--ink); background: rgba(255, 255, 255, 0.05); }
+.shell-link.active {
+  color: var(--aqua);
+  background: rgba(45, 212, 191, 0.1);
+}
+
+.shell-wallet { display: flex; align-items: center; gap: 10px; }
+.shell-addr {
+  font-size: 12.5px;
+  color: var(--aqua-soft);
+  background: rgba(45, 212, 191, 0.08);
+  border: 1px solid rgba(45, 212, 191, 0.3);
+  padding: 6px 12px;
+  border-radius: 999px;
+}
+.shell-disconnect {
+  background: transparent;
+  border: 1px solid var(--line-bright);
+  color: var(--ink-faint);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.shell-disconnect:hover { color: var(--red); border-color: var(--red); }
+.shell-connect { padding: 9px 18px; font-size: 14px; }
+
+@media (max-width: 760px) {
+  .shell-nav { display: none; }
+}

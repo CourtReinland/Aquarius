@@ -1,0 +1,344 @@
+/* ───────────────────────────────────────────────────────────────
+   AQUARIUS design system — "your community is a world"
+   Derived from the original SVG mockups:
+   - deep-space navy bodies
+   - vivid gradient headers (green→teal founding · blue→purple data · magenta banking)
+   - monospace data accents, terminal-style records
+   ─────────────────────────────────────────────────────────────── */
+
+:root {
+  /* space */
+  --bg: #070b14;
+  --bg-raise: #0d1320;
+  --bg-card: #101828;
+  --bg-glass: rgba(16, 24, 40, 0.72);
+  --line: #1e2a3e;
+  --line-bright: #2c3c58;
+
+  /* ink */
+  --ink: #e8eef7;
+  --ink-dim: #8b98ad;
+  --ink-faint: #4d5b72;
+
+  /* brand */
+  --aqua: #2dd4bf;
+  --aqua-soft: #99f6e4;
+  --green: #22c55e;
+  --violet: #8b5cf6;
+  --magenta: #d946ef;
+  --blue: #38bdf8;
+  --gold: #fbbf24;
+  --red: #f87171;
+
+  /* gradients straight from the mockups */
+  --grad-found: linear-gradient(100deg, #16a34a 0%, #0d9488 45%, #22d3ee 100%);
+  --grad-data: linear-gradient(100deg, #2563eb 0%, #7c3aed 55%, #22d3ee 100%);
+  --grad-bank: linear-gradient(100deg, #7c3aed 0%, #c026d3 60%, #e879f9 100%);
+  --grad-congrats: linear-gradient(100deg, #9333ea 0%, #c026d3 100%);
+  --grad-blue-aura: conic-gradient(from 0deg, #2dd4bf, #38bdf8, #8b5cf6, #d946ef, #2dd4bf);
+
+  --font-body: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --r-sm: 8px;
+  --r-md: 14px;
+  --r-lg: 22px;
+  --shadow-pop: 0 18px 50px -12px rgba(0, 0, 0, 0.65);
+  --shadow-glow-aqua: 0 0 24px rgba(45, 212, 191, 0.35);
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+::selection { background: rgba(45, 212, 191, 0.35); }
+
+/* scrollbar in-theme */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--line-bright); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ink-faint); }
+
+a { color: var(--aqua); text-decoration: none; }
+button { font-family: inherit; }
+input, select, textarea { font-family: inherit; }
+
+/* ── shared primitives ─────────────────────────────────────── */
+
+.mono { font-family: var(--font-mono); }
+
+.page {
+  position: relative;
+  z-index: 1;
+  max-width: 1060px;
+  margin: 0 auto;
+  padding: 28px 24px 140px;
+}
+
+/* gradient page header — the mockups' signature element */
+.page-header {
+  border-radius: var(--r-lg);
+  padding: 30px 34px;
+  margin-bottom: 26px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--shadow-pop);
+}
+.page-header h1 {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: #fff;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.25);
+}
+.page-header .sub {
+  margin-top: 6px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 15px;
+}
+.page-header.found { background: var(--grad-found); }
+.page-header.data { background: var(--grad-data); }
+.page-header.bank { background: var(--grad-bank); }
+.page-header.congrats { background: var(--grad-congrats); }
+
+/* subtle animated sheen across headers */
+.page-header::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.14) 48%, transparent 60%);
+  background-size: 220% 100%;
+  animation: sheen 7s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes sheen {
+  0%, 60% { background-position: 130% 0; }
+  100% { background-position: -90% 0; }
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 20px;
+}
+
+.glass {
+  background: var(--bg-glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--line-bright);
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+  display: block;
+  margin: 18px 0 8px;
+}
+
+.input,
+.select {
+  width: 100%;
+  background: var(--bg-raise);
+  border: 1.5px solid var(--line-bright);
+  border-radius: var(--r-sm);
+  padding: 13px 14px;
+  color: var(--ink);
+  font-size: 16px;
+  outline: none;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+.input:focus,
+.select:focus {
+  border-color: var(--aqua);
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.18);
+}
+
+/* option rows (the mockups' white dropdown items, dark-mode adapted) */
+.option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  background: var(--bg-raise);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 14px 16px;
+  margin-bottom: 8px;
+  color: var(--ink);
+  font-size: 15px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.12s;
+}
+.option:hover { border-color: var(--ink-faint); transform: translateX(2px); }
+.option.selected {
+  border-color: var(--aqua);
+  background: rgba(45, 212, 191, 0.08);
+  box-shadow: inset 0 0 18px rgba(45, 212, 191, 0.06);
+}
+.option .tick {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--line-bright);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  color: transparent;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.option.selected .tick {
+  background: var(--aqua);
+  border-color: var(--aqua);
+  color: #04211c;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: 10px;
+  padding: 14px 26px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.2s, filter 0.2s;
+}
+.btn:active { transform: translateY(1px) scale(0.99); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.btn-primary {
+  background: var(--grad-found);
+  color: #032018;
+  box-shadow: 0 6px 22px -6px rgba(34, 197, 94, 0.55);
+}
+.btn-primary:hover:not(:disabled) { filter: brightness(1.08); box-shadow: 0 8px 30px -6px rgba(34, 197, 94, 0.7); }
+
+.btn-violet {
+  background: var(--grad-data);
+  color: #fff;
+  box-shadow: 0 6px 22px -6px rgba(124, 58, 237, 0.55);
+}
+.btn-violet:hover:not(:disabled) { filter: brightness(1.1); }
+
+.btn-ghost {
+  background: transparent;
+  border: 1.5px solid var(--line-bright);
+  color: var(--ink-dim);
+}
+.btn-ghost:hover { border-color: var(--ink-faint); color: var(--ink); }
+
+/* mono pill — the mockups' inverse-video highlight ("ALPHA CENTAURI") */
+.pill {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  background: var(--ink);
+  color: var(--bg);
+  padding: 3px 8px;
+  border-radius: 4px;
+  display: inline-block;
+}
+.pill.aqua { background: var(--aqua); color: #04211c; }
+.pill.violet { background: var(--violet); color: #fff; }
+.pill.outline {
+  background: transparent;
+  color: var(--aqua);
+  border: 1px solid var(--aqua);
+}
+
+/* section tag — the mockups' "View Charter" / "Stats" purple chips */
+.section-tag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(90deg, #6d28d9, #7c3aed 60%, rgba(124, 58, 237, 0.25));
+  padding: 6px 26px 6px 12px;
+  border-radius: 4px;
+  margin: 22px 0 12px;
+}
+
+.expand-link {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--blue);
+  cursor: pointer;
+  margin-left: 10px;
+  user-select: none;
+}
+.expand-link:hover { text-decoration: underline; }
+
+/* terminal rows for Histories */
+.term-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--ink);
+  padding: 7px 0;
+  border-bottom: 1px dashed rgba(30, 42, 62, 0.6);
+}
+.term-row .stamp {
+  background: var(--bg-raise);
+  border: 1px solid var(--line);
+  color: var(--ink-dim);
+  font-size: 11.5px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* skeleton shimmer */
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-raise) 25%, var(--line) 50%, var(--bg-raise) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 8px;
+}
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.pop-in { animation: pop-in 0.45s cubic-bezier(0.21, 1.02, 0.55, 1) both; }
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.5); }
+  70% { box-shadow: 0 0 0 14px rgba(45, 212, 191, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(45, 212, 191, 0); }
+}

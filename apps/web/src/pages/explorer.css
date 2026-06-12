@@ -1,0 +1,76 @@
+.explorer-toolbar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.explorer-search { flex: 1; min-width: 220px; }
+
+.explorer-section {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--aqua);
+  margin: 30px 0 14px;
+}
+
+.explorer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.world-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  position: relative;
+  padding: 22px 16px 18px;
+  transition: transform 0.18s, border-color 0.18s, box-shadow 0.25s;
+  color: var(--ink);
+}
+.world-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--aqua);
+  box-shadow: 0 14px 40px -10px rgba(45, 212, 191, 0.25);
+}
+
+.world-name { font-size: 13px; }
+.world-meta {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+.world-addr { font-size: 11px; color: var(--ink-faint); }
+
+.world-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--bg);
+  background: var(--blue);
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+.world-badge.founder { background: var(--gold); }
+
+.explorer-error {
+  border-color: rgba(248, 113, 113, 0.4);
+  color: var(--red);
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.explorer-empty {
+  text-align: center;
+  padding: 52px 24px;
+}
+.explorer-empty-art { font-size: 44px; margin-bottom: 10px; }
+.explorer-empty h3 { margin: 0 0 6px; }
+.explorer-empty p { color: var(--ink-dim); margin: 0 0 20px; }
