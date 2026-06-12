@@ -1,3 +1,10 @@
+// Load packages/api/.env if present (keys for Blue/legal generation; gitignored)
+try {
+  process.loadEnvFile(new URL('../.env', import.meta.url).pathname);
+} catch {
+  /* no .env — rely on exported shell env */
+}
+
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { cors } from 'hono/cors';
