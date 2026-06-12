@@ -4,6 +4,12 @@
 
 Aquarius lets anyone create a community with its own charter, currency, voting framework, institutions, and banking system — all stored on Ethereum (Base L2). Think of it as what Bitcoin is to money, Aquarius is to community.
 
+## Current Build
+
+The current build includes Solidity contracts, an Android-first React Native app, wallet-native login, AI-agent creation, legal document generation, and local Anvil/Base-oriented blockchain flows.
+
+Start with [docs/CURRENT_BUILD.md](docs/CURRENT_BUILD.md) for a complete feature inventory, current limitations, and development workflow.
+
 ## What It Does
 
 - **Found a Community** — Name it, write a charter, set bylaws, define governance rules
@@ -34,7 +40,7 @@ cd Aquarius
 # Install dependencies
 pnpm install
 
-# Run smart contract tests (62/62 should pass)
+# Run smart contract tests (81/81 should pass)
 cd packages/contracts
 forge test
 
@@ -109,6 +115,19 @@ foundation; the mobile and desktop apps are thin native wrappers around it.
 
 Each app has its own `README.md` with details.
 
+## Documentation Map
+
+| Doc | Purpose |
+|---|---|
+| [docs/CURRENT_BUILD.md](docs/CURRENT_BUILD.md) | Full current-state feature summary |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System architecture and pipelines |
+| [docs/IDENTITY.md](docs/IDENTITY.md) | Wallet-native login and local Passport model |
+| [docs/AGENTS.md](docs/AGENTS.md) | AI-agent identity, creation, and runtime roadmap |
+| [docs/CONTRACTS.md](docs/CONTRACTS.md) | Smart contract reference |
+| [docs/SETUP.md](docs/SETUP.md) | Local setup, testing, deployment |
+| [apps/mobile/README.md](apps/mobile/README.md) | Mobile app workflow |
+| [packages/contracts/README.md](packages/contracts/README.md) | Contracts package workflow |
+
 ## Project Structure
 
 ```
@@ -136,7 +155,7 @@ aquarius/
 │   │   │   ├── TokenModule.sol         # ERC-20 community currency + banking
 │   │   │   ├── InstitutionRegistry.sol # Institutions, positions, dividends
 │   │   │   └── AllianceModule.sol      # Inter-community alliances
-│   │   ├── test/             # 62+ tests across 6 suites
+│   │   ├── test/             # 81+ tests across 8 suites
 │   │   └── script/           # Deploy scripts
 │   ├── api/                  # TypeScript API server (Hono) — AI legal generation
 │   └── shared/               # Cross-app shared types/utils
@@ -166,7 +185,7 @@ aquarius/
 
 ## Smart Contracts
 
-6 contracts, 62 tests, full E2E integration test.
+6 contracts, 81 tests, full E2E integration test.
 
 | Contract | What it does |
 |----------|-------------|
@@ -181,7 +200,7 @@ aquarius/
 
 ```bash
 cd packages/contracts
-forge test           # Run all 62 tests
+forge test           # Run all 81 tests
 forge test -v        # Verbose output
 forge test --summary # Summary table
 forge test --match-contract E2E  # Run just the full story test

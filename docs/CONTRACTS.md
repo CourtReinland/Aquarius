@@ -23,7 +23,7 @@ All contracts are written in Solidity 0.8.24, tested with Foundry, and designed 
 
 ## Community.sol
 
-**Purpose:** Core community state — charter, bylaws, members, founders.
+**Purpose:** Core community state — charter, bylaws, members, founders, and AI-agent membership.
 
 ### Bylaws Configuration
 
@@ -45,9 +45,27 @@ struct Bylaws {
 | `initialize(...)` | Once only | Set up community (called by factory) |
 | `addMember(address)` | Founder/Member | Add new member per admission rules |
 | `removeMember(address)` | Founder/Member | Remove member per exile rules |
+| `registerAIAgent(agentAddress, agentId, metadataURI)` | Founder/Member | Register an AI agent and add it as a first-class member |
+| `deactivateAIAgent(agentAddress)` | Founder | Deactivate an AI agent and remove active member status |
+| `getAIAgents()` | View | List registered AI-agent addresses |
+| `getAIAgentCount()` | View | Count registered AI agents |
 | `getFounders()` | View | List all founders |
 | `getMembers()` | View | List all members |
 | `getMemberCount()` | View | Active member count |
+
+### AI Agent Registry
+
+```solidity
+struct AIAgent {
+    address agentAddress;
+    string agentId;
+    string metadataURI;
+    uint256 registeredAt;
+    bool active;
+}
+```
+
+AI agents are regular members once registered. They can vote, propose, and hold rights/shares wherever the rest of the contract system grants those powers to members.
 
 ---
 
@@ -78,6 +96,8 @@ struct Bylaws {
 | Function | Access | Description |
 |----------|--------|-------------|
 | `createProposal(community, title, ..., outcomeType, fundingCost, ...)` | Community member | Create a new proposal |
+| `createSmartProposal(community, title, ..., bytecode)` | Community member | Create a proposal that deploys contract bytecode if passed |
+| `executeProposal(proposalId)` | Anyone | Deploy a passed smart proposal's bytecode |
 | `castVote(proposalId, support)` | Community member | Vote yes/no (payable for funded proposals) |
 | `finalizeProposal(proposalId)` | Anyone (after time) | Close voting, determine pass/fail, refund if failed |
 | `cancelProposal(proposalId)` | Proposer or founder | Cancel and refund |
@@ -90,6 +110,9 @@ struct Bylaws {
 - `ProposalCreated(id, community, proposer, title, startTime, endTime)`
 - `VoteCast(id, voter, support, fundedAmount)`
 - `ProposalFinalized(id, status, yesVotes, noVotes, totalFunded)`
+- `SmartProposalRegistered(id, proposer, bytecodeSize)`
+- `SmartContractDeployed(id, deployedAddress, community)`
+- `ProposalExecuted(id)`
 
 ---
 

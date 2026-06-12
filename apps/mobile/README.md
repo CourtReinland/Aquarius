@@ -19,27 +19,52 @@ sharing screens via `react-native-web` keeps web/mobile/desktop in sync.
 anvil &
 cd packages/contracts && forge script script/LocalTest.s.sol --broadcast --rpc-url http://127.0.0.1:8545
 
-# 2. Start Metro
+# 2. Start the API
+pnpm --filter @aquarius/api dev
+
+# 3. Start Metro
 cd ../../apps/mobile
 npx expo start --dev-client --port 8081
 
-# 3. Build and install on a connected Android device (USB debugging on)
+# 4. Build and install on a connected Android device (USB debugging on)
 npx expo run:android
 
-# 4. Forward Metro + Anvil over USB so the phone can reach the Mac's localhost
+# 5. Forward Metro + Anvil + API over USB so the phone can reach the Mac's localhost
 adb reverse tcp:8081 tcp:8081
 adb reverse tcp:8545 tcp:8545
+adb reverse tcp:3001 tcp:3001
 ```
 
-Both `adb reverse` mappings are flaky over long sessions (they drop when the phone screen
-sleeps). The repo includes `scripts/aq-reverse-watchdog.sh` (TODO: move from `/tmp`) which
-re-asserts both ports every few seconds.
+`adb reverse` mappings can drop over long sessions, especially when the phone sleeps. Re-run the three reverse commands if blockchain reads, Metro, or API calls stop working.
+
+## Current Features
+
+- Local dev wallet generation/import.
+- SIWE-style wallet login against the Aquarius API.
+- Local Aquarius Passport with signed session and linked wallets.
+- Community explorer in 2D grid or 3D React Three Fiber scene.
+- Found Community wizard.
+- On-chain membership dashboard.
+- AI-agent creation screen.
+- Proposal tracker with create/vote flows.
+- Banking setup UI.
+- Bylaws, histories, alliance, role, and legal document screens.
+
+## Android Release Build
+
+```bash
+cd apps/mobile/android
+EXPO_PUBLIC_AQUARIUS_API_BASE_URL=http://127.0.0.1:3001 ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a
+adb install -r app/build/outputs/apk/release/app-release.apk
+```
+
+This has been built and installed on a physical Pixel 3a.
 
 ## Layout
 
 ```
 apps/mobile/src/
-├── screens/            # 12 screens matching the original SVG mockups
+├── screens/            # 13 screens including Create AI Agent
 ├── components/
 │   ├── explorer3d/     # 3D Community Explorer (React Three Fiber)
 │   └── WalletConnect.tsx
@@ -51,5 +76,4 @@ apps/mobile/src/
 └── navigation/         # Stack + bottom tab navigator
 ```
 
-`apps/mobile/android/` and `apps/mobile/ios/` are git-ignored and regenerated on demand by
-`expo prebuild`. Native config tweaks live in `apps/mobile/app.json`.
+Native config tweaks live in `apps/mobile/app.json` and `apps/mobile/android/`.

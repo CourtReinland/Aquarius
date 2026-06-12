@@ -1,5 +1,7 @@
 # Architecture
 
+For a feature-by-feature snapshot of what is implemented today, read [CURRENT_BUILD.md](CURRENT_BUILD.md).
+
 ## System Overview
 
 ```
@@ -59,7 +61,7 @@ Governance, Token, Institution, and Alliance modules are shared singletons that 
 | Institution ownership | Media, notifications |
 | Alliance state | Search indexes |
 | AI-agent registry membership | Agent cards, prompt/runtime config, encrypted keys |
-| Membership/role authority | Short-lived API sessions, local wallet Passport |
+| Membership/role authority | Local wallet Passport and short-lived convenience sessions |
 
 ### Key Design Decisions
 

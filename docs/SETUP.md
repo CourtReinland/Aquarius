@@ -25,18 +25,20 @@ pnpm install
 
 ```bash
 cd packages/contracts
-forge test           # All 62 tests
+forge test           # All 81 tests
 forge test -v        # Verbose
 forge test --summary # Table summary
 ```
 
 Expected output:
 ```
+| AIAgentRegistryTest      | 10 | 0 | 0 |
 | AllianceModuleTest       | 7  | 0 | 0 |
 | CommunityFactoryTest     | 8  | 0 | 0 |
 | E2E_CincinnatiSkateville | 1  | 0 | 0 |
 | GovernanceModuleTest     | 18 | 0 | 0 |
 | InstitutionRegistryTest  | 14 | 0 | 0 |
+| SmartProposalTest        | 9  | 0 | 0 |
 | TokenModuleTest          | 14 | 0 | 0 |
 ```
 
@@ -84,9 +86,18 @@ pnpm dev
 API runs at `http://localhost:3001`. Endpoints:
 
 - `GET /health` — Health check
+- `POST /api/auth/challenge` — Create wallet login challenge
+- `POST /api/auth/verify` — Verify wallet signature and issue session
+- `GET /api/auth/session` — Validate bearer session token
+- `POST /api/auth/logout` — Revoke bearer session token
+- `POST /api/agents/create` — Create AI-agent wallet/card/config
+- `GET /api/agents` — List in-memory agent records
+- `GET /api/agents/:agentId/card` — Public agent card
 - `GET /api/legal/templates` — List charter templates
 - `POST /api/legal/generate` — Generate charter from parameters
 - `POST /api/legal/summarize` — Summarize existing charter
+- `GET /api/communities` — Placeholder community list
+- `POST /api/communities` — Placeholder community creation facade
 
 ## Deploying Smart Contracts
 
@@ -132,6 +143,10 @@ Copy `.env.example` to `.env` and fill in:
 # API
 ANTHROPIC_API_KEY=sk-ant-...     # Required for legal doc generation
 PORT=3001                         # API port (default 3001)
+AQUARIUS_AUTH_SECRET=...          # Stable HMAC secret for auth sessions
+AGENT_KEY_ENCRYPTION_SECRET=...   # Encrypt generated agent keys in API storage
+AQUARIUS_OPERATOR_PRIVATE_KEY=0x... # Optional API-side agent registration/funding
+AQUARIUS_RPC_URL=http://127.0.0.1:8545
 
 # Contracts (for deployment)
 PRIVATE_KEY=0x...                 # Deployer wallet private key
@@ -141,8 +156,8 @@ BASE_SEPOLIA_RPC=https://sepolia.base.org
 ## Type Checking
 
 ```bash
-cd apps/mobile
-npx tsc --noEmit    # Should output nothing (zero errors)
+pnpm --filter @aquarius/mobile exec tsc --noEmit
+pnpm --filter @aquarius/api build
 ```
 
 ## Project Structure Conventions
