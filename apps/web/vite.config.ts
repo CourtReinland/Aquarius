@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: true, // expose on LAN so phones can join the dev session
     port: 5173,
     proxy: {
       // Forward API calls to the Hono server so the web app is origin-clean

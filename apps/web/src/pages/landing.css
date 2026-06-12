@@ -64,6 +64,36 @@
 }
 
 .landing-import { max-width: 460px; }
+
+.landing-identities { max-width: 560px; }
+.identity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+.identity-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.12s, box-shadow 0.2s;
+}
+.identity-chip:hover {
+  border-color: var(--aqua);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -8px rgba(45, 212, 191, 0.35);
+}
+.identity-name { color: var(--ink); font-weight: 700; font-size: 14.5px; }
+.identity-addr { color: var(--ink-faint); font-size: 11px; }
+
+@media (max-width: 860px) {
+  .identity-grid { grid-template-columns: repeat(2, 1fr); }
+}
 .landing-import .landing-actions { margin-top: 16px; }
 .landing-err { color: var(--red); font-size: 12.5px; margin-top: 8px; }
 

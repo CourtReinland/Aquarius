@@ -5,12 +5,17 @@ import { defineChain } from 'viem';
 
 export { base, baseSepolia };
 
+// Reach Anvil on whatever host served this page: localhost on the Mac,
+// the Mac's LAN IP from a phone, or an adb-reversed localhost on Android.
+const rpcHost =
+  typeof window !== 'undefined' ? window.location.hostname : '127.0.0.1';
+
 export const localChain = defineChain({
   ...localhost,
   id: 31337,
   name: 'Anvil',
   rpcUrls: {
-    default: { http: ['http://127.0.0.1:8545'] },
+    default: { http: [`http://${rpcHost}:8545`] },
   },
 });
 

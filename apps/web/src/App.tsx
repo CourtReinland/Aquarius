@@ -16,7 +16,7 @@ import { eventScript } from './blue/script';
 
 function BlueWithActions() {
   const navigate = useNavigate();
-  const { generateDevWallet } = useWalletStore();
+  const { adoptIdentity } = useWalletStore();
   const blue = useBlueStore();
 
   return (
@@ -24,7 +24,7 @@ function BlueWithActions() {
       onAction={(action) => {
         switch (action) {
           case 'generate-wallet': {
-            const addr = generateDevWallet();
+            const addr = adoptIdentity(); // random free identity
             blue.say(eventScript.walletCreated(addr));
             navigate('/explorer');
             break;

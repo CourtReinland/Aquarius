@@ -1,30 +1,41 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useWalletStore } from '../state/walletStore';
+import { useWalletStore, ANVIL_IDENTITIES } from '../state/walletStore';
+import { privateKeyToAccount } from 'viem/accounts';
 import { useBlueStore } from '../state/blueStore';
 import { eventScript } from '../blue/script';
 import './landing.css';
 
 /**
  * Landing — "Link ETH wallet" (mockup 01) reimagined as Blue's welcome.
+ * On local Anvil, each device picks one of ten named test identities so
+ * multi-device governance testing has distinct voters.
  */
 export function Landing() {
   const navigate = useNavigate();
-  const { address, generateDevWallet, importPrivateKey } = useWalletStore();
+  const { address, adoptIdentity, importPrivateKey } = useWalletStore();
   const blue = useBlueStore();
   const [importing, setImporting] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [pk, setPk] = useState('');
   const [err, setErr] = useState<string | null>(null);
 
-  const onGenerate = () => {
-    const addr = generateDevWallet();
+  const onAdopt = (index: number) => {
+    const name = ANVIL_IDENTITIES[index].name;
+    const addr = adoptIdentity(index);
     blue.clear();
-    blue.say(eventScript.walletCreated(addr), {
-      chips: [
-        { label: 'Explore communities', action: 'go-explorer' },
-        { label: 'Found my own', action: 'go-found' },
+    blue.say(
+      [
+        `Welcome, ${name}. Your wallet is alive: ${addr.slice(0, 6)}…${addr.slice(-4)} — pre-funded with test ETH.`,
+        'Other devices can pick different identities, so your whole council can vote as separate members. Now — explore the cosmos, or found your own world?',
       ],
-    });
+      {
+        chips: [
+          { label: 'Explore communities', action: 'go-explorer' },
+          { label: 'Found my own', action: 'go-found' },
+        ],
+      }
+    );
     navigate('/explorer');
   };
 
@@ -83,17 +94,39 @@ export function Landing() {
                 </button>
               </div>
             </div>
+          ) : picking ? (
+            <div className="landing-identities pop-in">
+              <label className="label">Pick your test identity — each device should choose a different one</label>
+              <div className="identity-grid">
+                {ANVIL_IDENTITIES.map((id, i) => {
+                  const addr = privateKeyToAccount(id.key).address;
+                  return (
+                    <button key={id.name} className="identity-chip" onClick={() => onAdopt(i)}>
+                      <span className="identity-name">{id.name}</span>
+                      <span className="identity-addr mono">{addr.slice(0, 6)}…{addr.slice(-4)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="landing-actions" style={{ marginTop: 14 }}>
+                <button className="btn btn-ghost" onClick={() => setPicking(false)}>
+                  Back
+                </button>
+              </div>
+            </div>
           ) : (
             <>
               <div className="landing-actions">
-                <button className="btn btn-primary" onClick={onGenerate}>
-                  ✦ Generate Dev Wallet
+                <button className="btn btn-primary" onClick={() => setPicking(true)}>
+                  ✦ Choose Identity
                 </button>
                 <button className="btn btn-ghost" onClick={() => setImporting(true)}>
                   Import Private Key
                 </button>
               </div>
-              <div className="landing-note mono">Anvil testnet · no real funds needed</div>
+              <div className="landing-note mono">
+                Anvil testnet · ten pre-funded identities · no real funds needed
+              </div>
             </>
           )}
         </div>
