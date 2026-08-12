@@ -93,9 +93,11 @@ API runs at `http://localhost:3001`. Endpoints:
 - `POST /api/agents/create` — Create AI-agent wallet/card/config
 - `GET /api/agents` — List in-memory agent records
 - `GET /api/agents/:agentId/card` — Public agent card
-- `GET /api/legal/templates` — List charter templates
-- `POST /api/legal/generate` — Generate charter from parameters
-- `POST /api/legal/summarize` — Summarize existing charter
+- `GET /api/legal/templates` — List charter templates (public)
+- `POST /api/legal/generate` — Generate charter from parameters (**wallet session required**)
+- `POST /api/legal/summarize` — Summarize existing charter (**wallet session required**)
+- `POST /api/blue/chat` — Ask Blue (**wallet session required**)
+- `GET /api/blue/status` — `{ available: boolean }` only
 - `GET /api/communities` — Placeholder community list
 - `POST /api/communities` — Placeholder community creation facade
 

@@ -57,6 +57,55 @@ export class SlidingWindowRateLimiter {
   }
 }
 
+type RateLimitResponseContext = {
+  json: (body: unknown, status?: number) => Response;
+  header: (name: string, value: string) => void;
+};
+
+/** Shared 429 response for auth and paid AI routes. */
+export function rateLimitResponse(
+  c: RateLimitResponseContext,
+  retryAfterSeconds: number,
+  message = 'Rate limit exceeded. Wait before retrying.'
+) {
+  c.header('Retry-After', String(retryAfterSeconds));
+  return c.json(
+    {
+      error: 'Too many requests',
+      message,
+      retryAfterSeconds,
+    },
+    429
+  );
+}
+
 /** Auth challenge / verify defaults: generous for humans, tight against scrapers. */
 export const authIpLimiter = new SlidingWindowRateLimiter(30, 60_000);
 export const authAddressLimiter = new SlidingWindowRateLimiter(10, 60_000);
+
+/**
+ * Paid AI endpoints burn provider keys.
+ * Generate is expensive (up to ~8k tokens) — strictest.
+ * Summarize is cheaper — medium.
+ * Blue chat is short replies — loosest of the three.
+ */
+export const legalGenerateIpLimiter = new SlidingWindowRateLimiter(6, 15 * 60_000);
+export const legalGenerateAddressLimiter = new SlidingWindowRateLimiter(3, 15 * 60_000);
+
+export const legalSummarizeIpLimiter = new SlidingWindowRateLimiter(20, 15 * 60_000);
+export const legalSummarizeAddressLimiter = new SlidingWindowRateLimiter(10, 15 * 60_000);
+
+export const blueChatIpLimiter = new SlidingWindowRateLimiter(40, 60_000);
+export const blueChatAddressLimiter = new SlidingWindowRateLimiter(20, 60_000);
+
+/** Test helper — clears all in-process rate limiters used by the API. */
+export function __resetRateLimitersForTests() {
+  authIpLimiter.reset();
+  authAddressLimiter.reset();
+  legalGenerateIpLimiter.reset();
+  legalGenerateAddressLimiter.reset();
+  legalSummarizeIpLimiter.reset();
+  legalSummarizeAddressLimiter.reset();
+  blueChatIpLimiter.reset();
+  blueChatAddressLimiter.reset();
+}

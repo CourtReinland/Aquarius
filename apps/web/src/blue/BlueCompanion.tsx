@@ -87,11 +87,23 @@ export function BlueCompanion({ onAction }: { onAction?: (action: string) => voi
     blue.clear(); // replace whatever she was saying — the user asked something new
     blue.think(true);
     try {
+      // Blue chat requires an Aquarius wallet session. Web passport does not
+      // yet issue API bearer tokens, so this path usually falls back locally.
       const res = await fetch('/api/blue/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: q, route: location.pathname }),
       });
+      if (res.status === 401) {
+        blue.say(
+          `${localAnswer(q)} (Sign in with your wallet for my full brain — local instincts for now.)`
+        );
+        return;
+      }
+      if (res.status === 429) {
+        blue.say('Whoa — too many questions at once. Give me a moment, then ask again.');
+        return;
+      }
       if (!res.ok) throw new Error(`api ${res.status}`);
       const data = (await res.json()) as { reply: string };
       blue.say(data.reply);

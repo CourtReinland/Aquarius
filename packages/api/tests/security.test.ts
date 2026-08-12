@@ -3,9 +3,29 @@ import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { createApp } from '../src/app.js';
 import { __resetAuthStateForTests } from '../src/routes/auth.js';
 import { __resetAgentsForTests } from '../src/routes/agents.js';
-import { authAddressLimiter, authIpLimiter } from '../src/lib/rate-limit.js';
+import {
+  __resetRateLimitersForTests,
+  legalGenerateAddressLimiter,
+} from '../src/lib/rate-limit.js';
 
 const communityAddress = '0x0000000000000000000000000000000000000001';
+
+const legalGeneratePayload = {
+  name: 'Cupcake DAO',
+  founders: ['0x0000000000000000000000000000000000000001'],
+  charterTemplate: 'draft-original',
+  admissionRule: 'founders-only',
+  exileRule: 'founders-only',
+  votePercentage: 66,
+  whoMayPropose: 'founders-only',
+  legalFramework: '',
+  jurisdiction: '',
+  allowCorporateMembers: false,
+  bankingStyle: 'austrian',
+  startingTokenAmount: 1000000,
+  allowFractionalLending: false,
+  leverageRatio: 1,
+};
 
 async function signIn(app: ReturnType<typeof createApp>, privateKey: `0x${string}`) {
   const account = privateKeyToAccount(privateKey);
@@ -54,14 +74,15 @@ describe('API security hardening', () => {
   beforeEach(() => {
     __resetAuthStateForTests();
     __resetAgentsForTests();
-    authIpLimiter.reset();
-    authAddressLimiter.reset();
+    __resetRateLimitersForTests();
     delete process.env.AGENT_OPERATOR_ACTIONS_ENABLED;
     delete process.env.AGENT_OPERATOR_ALLOWLIST;
     delete process.env.AGENT_MAX_INITIAL_FUNDING_ETH;
     delete process.env.AQUARIUS_CORS_ORIGINS;
     delete process.env.NODE_ENV;
     delete process.env.AQUARIUS_ENV;
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.XAI_API_KEY;
   });
 
   it('rejects unauthenticated agent creation', async () => {
@@ -245,6 +266,103 @@ describe('API security hardening', () => {
       });
       lastStatus = res.status;
       if (res.status === 429) break;
+    }
+
+    expect(lastStatus).toBe(429);
+  });
+
+  it('rejects unauthenticated legal generation and blue chat', async () => {
+    const app = createApp();
+
+    const generateRes = await app.request('/api/legal/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(legalGeneratePayload),
+    });
+    expect(generateRes.status).toBe(401);
+    const generateBody = await generateRes.json();
+    expect(generateBody.error).toBe('Wallet session required');
+
+    const summarizeRes = await app.request('/api/legal/summarize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ charter: 'Preamble...', communityName: 'Cupcake DAO' }),
+    });
+    expect(summarizeRes.status).toBe(401);
+
+    const chatRes = await app.request('/api/blue/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: 'hello blue' }),
+    });
+    expect(chatRes.status).toBe(401);
+    const chatBody = await chatRes.json();
+    expect(chatBody.error).toBe('Wallet session required');
+  });
+
+  it('keeps legal templates public and hides blue provider key presence', async () => {
+    const app = createApp();
+
+    const templatesRes = await app.request('/api/legal/templates');
+    expect(templatesRes.status).toBe(200);
+    const templatesBody = await templatesRes.json();
+    expect(Array.isArray(templatesBody.templates)).toBe(true);
+
+    process.env.ANTHROPIC_API_KEY = 'test-key';
+    process.env.XAI_API_KEY = 'test-xai';
+    const statusRes = await app.request('/api/blue/status');
+    expect(statusRes.status).toBe(200);
+    const statusBody = await statusRes.json();
+    expect(statusBody).toEqual({ available: true });
+    expect(statusBody.grok).toBeUndefined();
+    expect(statusBody.claude).toBeUndefined();
+    expect(statusBody.grokModel).toBeUndefined();
+    expect(statusBody.claudeModel).toBeUndefined();
+  });
+
+  it('bounds summarize charter size', async () => {
+    const app = createApp();
+    const { token } = await signIn(app, generatePrivateKey());
+
+    const res = await app.request('/api/legal/summarize', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        charter: 'x'.repeat(50_001),
+        communityName: 'Cupcake DAO',
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('Invalid parameters');
+  });
+
+  it('rate-limits legal generate by session address', async () => {
+    const app = createApp();
+    const { token } = await signIn(app, generatePrivateKey());
+
+    // Ensure limiter is empty, then burn the address budget (3 / 15 min).
+    legalGenerateAddressLimiter.reset();
+
+    let lastStatus = 0;
+    for (let i = 0; i < 4; i += 1) {
+      const res = await app.request('/api/legal/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          'x-forwarded-for': `203.0.113.${40 + i}`,
+        },
+        body: JSON.stringify(legalGeneratePayload),
+      });
+      lastStatus = res.status;
+      // Without ANTHROPIC_API_KEY, under-limit requests return 503 after the limiter check.
+      if (res.status === 429) break;
+      expect([503, 429]).toContain(res.status);
     }
 
     expect(lastStatus).toBe(429);
