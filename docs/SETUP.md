@@ -11,7 +11,8 @@
 ### Optional
 
 - **Rust** — `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh` (for future backend services)
-- **Anthropic API Key** — For AI legal document generation
+- **xAI API Key** — Primary AI provider (Grok) for legal generation and Blue chat
+- **Anthropic API Key** — Optional fallback if Grok is unset or a Grok call fails
 
 ## Installation
 
@@ -76,8 +77,9 @@ Requires Xcode (macOS only).
 ```bash
 cd packages/api
 
-# Set your Anthropic API key (required for legal generation)
-export ANTHROPIC_API_KEY=sk-ant-...
+# Set your xAI key (primary for legal generation + Blue). Anthropic is optional fallback.
+export XAI_API_KEY=xai-...
+# export ANTHROPIC_API_KEY=sk-ant-...
 
 # Start dev server
 pnpm dev
@@ -143,7 +145,9 @@ Copy `.env.example` to `.env` and fill in:
 
 ```bash
 # API
-ANTHROPIC_API_KEY=sk-ant-...     # Required for legal doc generation
+XAI_API_KEY=xai-...               # Primary (Grok) for legal docs + Blue
+# ANTHROPIC_API_KEY=sk-ant-...    # Optional Anthropic fallback
+# LEGAL_GROK_MODEL=grok-4         # Long-form legal default (not the tiny fast model)
 PORT=3001                         # API port (default 3001)
 AQUARIUS_AUTH_SECRET=...          # Stable HMAC secret for auth sessions
 AGENT_KEY_ENCRYPTION_SECRET=...   # Encrypt generated agent keys in API storage

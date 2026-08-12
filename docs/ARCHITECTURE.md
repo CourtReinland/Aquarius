@@ -18,7 +18,7 @@ For a feature-by-feature snapshot of what is implemented today, read [CURRENT_BU
 ┌──────────────▼───────────────────────────────────┐
 │          API Gateway (Hono / TypeScript)          │
 │                                                   │
-│  /api/legal/generate     → Claude API → Markdown   │
+│  /api/legal/generate     → Grok (xAI) → Markdown   │
 │  /api/legal/templates    → Template list           │
 │  /api/legal/summarize    → Charter summary         │
 │  /api/auth/challenge     → Wallet login nonce      │
@@ -137,7 +137,7 @@ System Prompt (template-specific legal style)
   + User Prompt (all community parameters)
         │
         ▼
-Claude Sonnet API Call (8000 max tokens)
+Grok (xAI) API Call (8000 max tokens; Anthropic fallback)
         │
         ▼
 Validation (check 15 required sections present)
