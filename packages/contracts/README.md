@@ -29,6 +29,24 @@ The current suite covers:
 - Institution creation, shares, positions, dividends.
 - Alliance propose/accept/decline/dissolve flows.
 - Full Cincinnati Skateville E2E story.
+- Foundry invariant / fuzz campaigns under `test/invariant/` (refund conservation, status machine, mint bounds, membership, dividends).
+
+### Invariant / fuzz tests
+
+Default `forge test` uses a bounded invariant campaign (`[profile.default.invariant]`: `runs = 64`, `depth = 15`) so CI stays fast.
+
+```bash
+# Invariants + fuzz only
+forge test --match-path test/invariant/
+
+# Longer audit campaign (see [profile.audit] in foundry.toml)
+forge test --profile audit --match-path test/invariant/
+
+# Or override without switching profile
+FOUNDRY_INVARIANT_RUNS=1000 FOUNDRY_INVARIANT_DEPTH=50 forge test --match-path test/invariant/
+```
+
+Handlers are targeted (bounded actors/actions, expected reverts swallowed) to avoid flaky chaos runs. Properties covered are listed in `test/invariant/SecurityInvariants.t.sol`.
 
 ## Build
 
