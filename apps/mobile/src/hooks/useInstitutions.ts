@@ -1,16 +1,10 @@
 import {
-  createPublicClient,
-  createWalletClient,
-  http,
   type Address,
   type Hash,
 } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
 import { defaultChain } from '../config/chains';
 import { institutionRegistryAbi } from '../config/abis';
-
-const chain = defaultChain;
-const publicClient = createPublicClient({ chain, transport: http() });
+import { getPublicClient, getWalletClient } from '../wallet/signer';
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -40,6 +34,7 @@ export async function getInstitution(
   registryAddress: Address,
   institutionId: bigint
 ): Promise<InstitutionData> {
+  const publicClient = await getPublicClient();
   const result = await publicClient.readContract({
     address: registryAddress,
     abi: institutionRegistryAbi,
@@ -55,6 +50,7 @@ export async function getPosition(
   registryAddress: Address,
   positionId: bigint
 ): Promise<PositionData> {
+  const publicClient = await getPublicClient();
   const result = await publicClient.readContract({
     address: registryAddress,
     abi: institutionRegistryAbi,
@@ -70,6 +66,7 @@ export async function getCommunityInstitutions(
   registryAddress: Address,
   community: Address
 ): Promise<bigint[]> {
+  const publicClient = await getPublicClient();
   return publicClient.readContract({
     address: registryAddress,
     abi: institutionRegistryAbi,
@@ -83,6 +80,7 @@ export async function getMemberShares(
   institutionId: bigint,
   member: Address
 ): Promise<bigint> {
+  const publicClient = await getPublicClient();
   return publicClient.readContract({
     address: registryAddress,
     abi: institutionRegistryAbi,
@@ -94,54 +92,57 @@ export async function getMemberShares(
 // ─── Write ────────────────────────────────────────────────────────
 
 export async function acceptPosition(
-  privateKey: `0x${string}`,
   registryAddress: Address,
   positionId: bigint
 ): Promise<Hash> {
-  const account = privateKeyToAccount(privateKey);
-  const walletClient = createWalletClient({ account, chain, transport: http() });
+  const walletClient = await getWalletClient();
+  const publicClient = await getPublicClient();
 
   const txHash = await walletClient.writeContract({
     address: registryAddress,
     abi: institutionRegistryAbi,
     functionName: 'acceptPosition',
     args: [positionId],
+    chain: defaultChain,
+    account: walletClient.account,
   });
   await publicClient.waitForTransactionReceipt({ hash: txHash });
   return txHash;
 }
 
 export async function declinePosition(
-  privateKey: `0x${string}`,
   registryAddress: Address,
   positionId: bigint
 ): Promise<Hash> {
-  const account = privateKeyToAccount(privateKey);
-  const walletClient = createWalletClient({ account, chain, transport: http() });
+  const walletClient = await getWalletClient();
+  const publicClient = await getPublicClient();
 
   const txHash = await walletClient.writeContract({
     address: registryAddress,
     abi: institutionRegistryAbi,
     functionName: 'declinePosition',
     args: [positionId],
+    chain: defaultChain,
+    account: walletClient.account,
   });
   await publicClient.waitForTransactionReceipt({ hash: txHash });
   return txHash;
 }
 
 export async function vacatePosition(
-  privateKey: `0x${string}`,
   registryAddress: Address,
   positionId: bigint
 ): Promise<Hash> {
-  const account = privateKeyToAccount(privateKey);
-  const walletClient = createWalletClient({ account, chain, transport: http() });
+  const walletClient = await getWalletClient();
+  const publicClient = await getPublicClient();
 
   const txHash = await walletClient.writeContract({
     address: registryAddress,
     abi: institutionRegistryAbi,
     functionName: 'vacatePosition',
     args: [positionId],
+    chain: defaultChain,
+    account: walletClient.account,
   });
   await publicClient.waitForTransactionReceipt({ hash: txHash });
   return txHash;

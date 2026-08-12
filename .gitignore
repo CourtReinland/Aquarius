@@ -45,3 +45,7 @@ run-kai.sh
 run-ralph.sh
 setup-claude-terminals.sh
 create-linear-tickets.sh
+
+# Local chain state snapshots
+.anvil/
+packages/api/.data/

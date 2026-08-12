@@ -197,19 +197,27 @@ export function useAgentCreator() {
     setError(null);
 
     try {
+      if (!session?.token || !session.address) {
+        throw new Error('Sign in with your wallet before creating an agent.');
+      }
+
       const response = await fetch(`${API_BASE}/api/agents/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+          Authorization: `Bearer ${session.token}`,
         },
-        body: JSON.stringify(params),
+        body: JSON.stringify({
+          ...params,
+          // Session address is authoritative; always send it so the API can bind attribution.
+          creatorAddress: session.address,
+        }),
       });
 
       const result = await response.json();
 
       if (!response.ok || !result.success) {
-        throw new Error(result.error || result.message || `HTTP ${response.status}`);
+        throw new Error(result.message || result.error || `HTTP ${response.status}`);
       }
 
       const typedResult = result as CreateAgentResult;
@@ -224,7 +232,7 @@ export function useAgentCreator() {
     } finally {
       setIsCreating(false);
     }
-  }, [session?.token]);
+  }, [session?.address, session?.token]);
 
   const testChat = useCallback(async (message: string, targetAgent = agent) => {
     if (!targetAgent) return null;

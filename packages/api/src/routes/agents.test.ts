@@ -1,15 +1,56 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { Hono } from 'hono';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { agentPermissionClassIndex, agentRoutes, resetAgentStoreForTests } from './agents';
+import { authRoutes, __resetAuthStateForTests } from './auth';
 
 function createTestApp() {
   const app = new Hono();
+  app.route('/api/auth', authRoutes);
   app.route('/api/agents', agentRoutes);
   return app;
 }
+
+async function signIn(app: ReturnType<typeof createTestApp>, privateKey: `0x${string}` = generatePrivateKey()) {
+  const account = privateKeyToAccount(privateKey);
+
+  const challengeRes = await app.request('/api/auth/challenge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.10' },
+    body: JSON.stringify({
+      address: account.address,
+      chainId: 31337,
+    }),
+  });
+  expect(challengeRes.status).toBe(200);
+  const challengeBody = await challengeRes.json();
+  const message = challengeBody.challenge.message as string;
+  const signature = await account.signMessage({ message });
+
+  const verifyRes = await app.request('/api/auth/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.10' },
+    body: JSON.stringify({ message, signature }),
+  });
+  expect(verifyRes.status).toBe(200);
+  const verifyBody = await verifyRes.json();
+
+  return {
+    address: account.address,
+    token: verifyBody.session.token as string,
+    authHeaders: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${verifyBody.session.token as string}`,
+    },
+  };
+}
+
+beforeEach(() => {
+  __resetAuthStateForTests();
+});
 
 describe('agent permission class mapping', () => {
   it('maps passport permission classes to the Community.sol enum order', () => {
@@ -31,9 +72,10 @@ describe('agent routes passport creation', () => {
       mkdirSync(tempDir, { recursive: true });
       resetAgentStoreForTests(storePath);
       const firstApp = createTestApp();
+      const session = await signIn(firstApp);
       const createResponse = await firstApp.request('/api/agents/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: session.authHeaders,
         body: JSON.stringify({
           communityAddress: '0x0000000000000000000000000000000000000001',
           communityName: 'Durable DAO',
@@ -73,7 +115,10 @@ describe('agent routes passport creation', () => {
         cloneSafe: true,
       });
 
-      const listResponse = await secondApp.request('/api/agents?communityAddress=0x0000000000000000000000000000000000000001');
+      const listResponse = await secondApp.request(
+        '/api/agents?communityAddress=0x0000000000000000000000000000000000000001',
+        { headers: { Authorization: `Bearer ${session.token}` } },
+      );
       const listBody = await listResponse.json();
       expect(listBody.total).toBe(1);
       expect(listBody.agents[0].agentId).toBe(created.agent.agentId);
@@ -90,9 +135,10 @@ describe('agent routes passport creation', () => {
     try {
       resetAgentStoreForTests(storePath);
       const app = createTestApp();
+      const session = await signIn(app);
       const createResponse = await app.request('/api/agents/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: session.authHeaders,
         body: JSON.stringify({
           communityAddress: '0x0000000000000000000000000000000000000001',
           communityName: 'Chat DAO',
@@ -155,10 +201,11 @@ describe('agent routes passport creation', () => {
 
   it('creates an expanded API-hosted agent passport with Agent Foundry defaults and custom fields', async () => {
     const app = createTestApp();
+    const session = await signIn(app);
 
     const response = await app.request('/api/agents/create', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: session.authHeaders,
       body: JSON.stringify({
         communityAddress: '0x0000000000000000000000000000000000000001',
         communityName: 'Cupcake DAO',
@@ -251,6 +298,7 @@ describe('agent routes passport creation', () => {
 
   it('rejects under-specified non-scratch origins and malformed policy hashes', async () => {
     const app = createTestApp();
+    const session = await signIn(app);
     const basePayload = {
       communityAddress: '0x0000000000000000000000000000000000000001',
       name: 'Invalid Origin Agent',
@@ -263,14 +311,14 @@ describe('agent routes passport creation', () => {
 
     const cloneResponse = await app.request('/api/agents/create', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: session.authHeaders,
       body: JSON.stringify({ ...basePayload, origin: { mode: 'clone' } }),
     });
     expect(cloneResponse.status).toBe(400);
 
     const hashResponse = await app.request('/api/agents/create', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: session.authHeaders,
       body: JSON.stringify({
         ...basePayload,
         name: 'Invalid Hash Agent',
@@ -287,9 +335,10 @@ describe('agent routes passport creation', () => {
     try {
       resetAgentStoreForTests(storePath);
       const app = createTestApp();
+      const session = await signIn(app);
       const createResponse = await app.request('/api/agents/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: session.authHeaders,
         body: JSON.stringify({
           communityAddress: '0x0000000000000000000000000000000000000001',
           name: 'Editable Lynx',
@@ -360,9 +409,10 @@ describe('agent routes passport creation', () => {
     try {
       resetAgentStoreForTests(storePath);
       const app = createTestApp();
+      const session = await signIn(app);
       const createResponse = await app.request('/api/agents/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: session.authHeaders,
         body: JSON.stringify({
           communityAddress: '0x0000000000000000000000000000000000000001',
           name: 'Treasury Signer',
@@ -444,9 +494,10 @@ describe('agent routes passport creation', () => {
     try {
       resetAgentStoreForTests(storePath);
       const app = createTestApp();
+      const session = await signIn(app);
       const createResponse = await app.request('/api/agents/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: session.authHeaders,
         body: JSON.stringify({
           communityAddress: '0x0000000000000000000000000000000000000001',
           name: 'Remembering Guide',
@@ -515,9 +566,10 @@ describe('agent routes passport creation', () => {
 
   it('serves structured placeholders for advertised A2A, MCP, and selfie endpoints', async () => {
     const app = createTestApp();
+    const session = await signIn(app);
     const response = await app.request('/api/agents/create', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: session.authHeaders,
       body: JSON.stringify({
         communityAddress: '0x0000000000000000000000000000000000000001',
         name: 'Endpoint Fox',

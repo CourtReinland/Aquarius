@@ -7,11 +7,12 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@aquarius/shared": "workspace:*",
-    "hono": "^4.6.0",
+    "hono": "^4.12.21",
     "@hono/node-server": "^1.13.0",
     "viem": "^2.21.0",
     "drizzle-orm": "^0.36.0",
@@ -22,7 +23,7 @@
   "devDependencies": {
     "typescript": "^5.7.0",
     "tsx": "^4.19.0",
-    "vitest": "^2.1.0",
+    "vitest": "^3.2.6",
     "@types/node": "^22.0.0",
     "drizzle-kit": "^0.28.0"
   }

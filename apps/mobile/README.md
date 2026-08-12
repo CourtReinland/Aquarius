@@ -19,37 +19,83 @@ sharing screens via `react-native-web` keeps web/mobile/desktop in sync.
 anvil &
 cd packages/contracts && forge script script/LocalTest.s.sol --broadcast --rpc-url http://127.0.0.1:8545
 
-# 2. Start Metro
+# 2. Start the API
+pnpm --filter @aquarius/api dev
+
+# 3. Start Metro (secure mode by default — personal local keys only)
 cd ../../apps/mobile
 npx expo start --dev-client --port 8081
 
-# 3. Build and install on a connected Android device (USB debugging on)
+# Optional: Anvil pre-funded shared-key signing (local only; labeled in UI)
+EXPO_PUBLIC_AQUARIUS_DEV_SIGNER=1 npx expo start --dev-client --port 8081
+
+# 4. Build and install on a connected Android device (USB debugging on)
 npx expo run:android
 
-# 4. Forward Metro + Anvil over USB so the phone can reach the Mac's localhost
+# 5. Forward Metro + Anvil + API over USB so the phone can reach the Mac's localhost
 adb reverse tcp:8081 tcp:8081
 adb reverse tcp:8545 tcp:8545
+adb reverse tcp:3001 tcp:3001
 ```
 
-Both `adb reverse` mappings are flaky over long sessions (they drop when the phone screen
-sleeps). The repo includes `scripts/aq-reverse-watchdog.sh` (TODO: move from `/tmp`) which
-re-asserts both ports every few seconds.
+`adb reverse` mappings can drop over long sessions, especially when the phone sleeps. Re-run the three reverse commands if blockchain reads, Metro, or API calls stop working.
+
+## Signing modes
+
+| Mode | How to enable | What signs txs / SIWE |
+|---|---|---|
+| **Secure (default)** | No flag | User-generated or imported personal key via `getWalletClient()` |
+| **Dev Anvil** | `EXPO_PUBLIC_AQUARIUS_DEV_SIGNER=1` | Opt-in "Use Anvil Account #0" button; UI shows **DEV SIGNER ACTIVE** |
+
+Rules:
+
+- There is no silent default path that signs with the well-known Anvil key.
+- All contract writes go through `src/wallet/signer.ts` → `getWalletClient()`.
+- Private keys persist in `expo-secure-store` on native. Web preview falls back to AsyncStorage and is **insecure / preview-only**.
+- Passport metadata (session, linked wallets) stays in AsyncStorage; the raw key never goes there and is never logged.
+- SIWE challenge/verify uses the same WalletClient as transactions (address consistency).
+
+For local Anvil gas without the shared key, create a personal wallet and fund it from Anvil account #0 manually.
+
+## Current Features
+
+- Local wallet create/import with SecureStore-backed key material.
+- Explicit opt-in Anvil/dev signer for local gas testing.
+- SIWE-style wallet login against the Aquarius API (same wallet that signs txs).
+- Local Aquarius Passport with signed session and linked wallets.
+- Community explorer in 2D grid or 3D React Three Fiber scene.
+- Found Community wizard.
+- On-chain membership dashboard.
+- AI-agent creation screen.
+- Proposal tracker with create/vote flows.
+- Banking setup UI.
+- Bylaws, histories, alliance, role, and legal document screens.
+
+## Android Release Build
+
+```bash
+cd apps/mobile/android
+EXPO_PUBLIC_AQUARIUS_API_BASE_URL=http://127.0.0.1:3001 ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a
+adb install -r app/build/outputs/apk/release/app-release.apk
+```
+
+This has been built and installed on a physical Pixel 3a.
 
 ## Layout
 
 ```
 apps/mobile/src/
-├── screens/            # 12 screens matching the original SVG mockups
+├── screens/            # 13 screens including Create AI Agent
 ├── components/
 │   ├── explorer3d/     # 3D Community Explorer (React Three Fiber)
 │   └── WalletConnect.tsx
 ├── hooks/              # Blockchain reads/writes via viem
-├── config/             # Chain config, contract addresses, ABIs
+├── wallet/             # SecureStore key storage + getWalletClient() signer
+├── config/             # Chain config, contract addresses, ABIs, env flags
 ├── context/            # BlockchainContext (provides clients, factory address)
 ├── types/              # TypeScript domain types
 ├── utils/              # showAlert helper (cross-platform), etc.
 └── navigation/         # Stack + bottom tab navigator
 ```
 
-`apps/mobile/android/` and `apps/mobile/ios/` are git-ignored and regenerated on demand by
-`expo prebuild`. Native config tweaks live in `apps/mobile/app.json`.
+Native config tweaks live in `apps/mobile/app.json` and `apps/mobile/android/`.

@@ -2,6 +2,31 @@
 
 All contracts are written in Solidity 0.8.24, tested with Foundry, and designed for Base (Ethereum L2).
 
+## Security Hardening & Assumptions
+
+Hardening pass focused on reentrancy, initializer access control, unsafe ETH handling, and smart-proposal execution. Product economics (quorum math, leverage ratios, share soft-targets) were intentionally not redesigned.
+
+### Hardened assumptions
+
+| Area | Assumption / behavior |
+|------|------------------------|
+| Community creation | `CommunityFactory.createCommunity` deploys + initializes in one tx. `Community.initialize` is **deployer-only** (factory is deployer in the normal path). |
+| Token creation | Each community should `new TokenModule()` + `initialize` in one tx from the same address. `initialize` is **deployer-only**. The Deploy script `tokenTemplate` is a template address unless initialized in the same broadcast. |
+| Governance refunds | On fail/cancel, funded amounts are moved to `claimableRefunds` (effects), then best-effort pushed. Failed pushes remain claimable via `claimRefund()`. Entry points are `nonReentrant`. |
+| Smart proposals | `executeProposal` stays **permissionless**. Status flips to `Executed` **before** `CREATE` so constructors cannot double-deploy. Bytecode is untrusted; voters/proposers must review it off-chain. |
+| Dividends | `distributeDividends` is `nonReentrant`. Payouts use `outstandingShares` (includes position grants, which may exceed the soft `totalShares` target). |
+| Passed proposal ETH | Funding for **Passed** proposals remains in `GovernanceModule` until a future treasury/institution funding flow is added. |
+
+### Remaining audit follow-ups
+
+- Formal external audit before mainnet / significant TVL.
+- Invariant + fuzz campaigns (refund conservation, share/dividend conservation, proposal status machine).
+- ERC-4337 / account-abstraction integration (deferred).
+- UUPS/proxy upgrade system (deferred by product plan).
+- Explicit treasury withdrawal / institution funding for Passed proposal ETH.
+- Contracts that permanently reject ETH cannot pull refunds; operators should prefer EOAs or claimable-friendly receivers.
+- Malicious smart-proposal bytecode remains a governance/social risk even with safe status transitions.
+
 ## CommunityFactory.sol
 
 **Purpose:** Deploys new community instances and tracks them.
@@ -23,7 +48,7 @@ All contracts are written in Solidity 0.8.24, tested with Foundry, and designed 
 
 ## Community.sol
 
-**Purpose:** Core community state — charter, bylaws, members, founders.
+**Purpose:** Core community state — charter, bylaws, members, founders, and AI-agent membership.
 
 ### Bylaws Configuration
 
@@ -42,12 +67,30 @@ struct Bylaws {
 
 | Function | Access | Description |
 |----------|--------|-------------|
-| `initialize(...)` | Once only | Set up community (called by factory) |
+| `initialize(...)` | Deployer, once only | Set up community (called by factory in same tx) |
 | `addMember(address)` | Founder/Member | Add new member per admission rules |
 | `removeMember(address)` | Founder/Member | Remove member per exile rules |
+| `registerAIAgent(agentAddress, agentId, metadataURI)` | Founder/Member | Register an AI agent and add it as a first-class member |
+| `deactivateAIAgent(agentAddress)` | Founder | Deactivate an AI agent and remove active member status |
+| `getAIAgents()` | View | List registered AI-agent addresses |
+| `getAIAgentCount()` | View | Count registered AI agents |
 | `getFounders()` | View | List all founders |
 | `getMembers()` | View | List all members |
 | `getMemberCount()` | View | Active member count |
+
+### AI Agent Registry
+
+```solidity
+struct AIAgent {
+    address agentAddress;
+    string agentId;
+    string metadataURI;
+    uint256 registeredAt;
+    bool active;
+}
+```
+
+AI agents are regular members once registered. They can vote, propose, and hold rights/shares wherever the rest of the contract system grants those powers to members.
 
 ---
 
@@ -78,9 +121,12 @@ struct Bylaws {
 | Function | Access | Description |
 |----------|--------|-------------|
 | `createProposal(community, title, ..., outcomeType, fundingCost, ...)` | Community member | Create a new proposal |
-| `castVote(proposalId, support)` | Community member | Vote yes/no (payable for funded proposals) |
+| `createSmartProposal(community, title, ..., bytecode)` | Community member | Create a proposal that deploys contract bytecode if passed |
+| `executeProposal(proposalId)` | Anyone | Deploy a passed smart proposal's bytecode (status→Executed before CREATE) |
+| `castVote(proposalId, support)` | Community member | Vote yes/no (payable for funded proposals; rejects unexpected ETH) |
 | `finalizeProposal(proposalId)` | Anyone (after time) | Close voting, determine pass/fail, refund if failed |
 | `cancelProposal(proposalId)` | Proposer or founder | Cancel and refund |
+| `claimRefund()` | Claimable account | Pull refund if push failed (hostile receiver) |
 | `getProposal(id)` | View | Full proposal data |
 | `getTimeRemaining(id)` | View | Seconds until voting closes |
 | `getYesVoters(id)` | View | List of yes-voter addresses |
@@ -90,6 +136,9 @@ struct Bylaws {
 - `ProposalCreated(id, community, proposer, title, startTime, endTime)`
 - `VoteCast(id, voter, support, fundedAmount)`
 - `ProposalFinalized(id, status, yesVotes, noVotes, totalFunded)`
+- `SmartProposalRegistered(id, proposer, bytecodeSize)`
+- `SmartContractDeployed(id, deployedAddress, community)`
+- `ProposalExecuted(id)`
 
 ---
 
@@ -120,7 +169,7 @@ struct BankingConfig {
 
 | Function | Access | Description |
 |----------|--------|-------------|
-| `initialize(name, symbol, community, bank, initialSupply, config)` | Once | Set up token with banking rules |
+| `initialize(name, symbol, community, bank, initialSupply, config)` | Deployer, once | Set up token with banking rules |
 | `transfer(to, value)` | Token holder | Standard ERC-20 transfer |
 | `approve(spender, value)` | Token holder | Standard ERC-20 approval |
 | `mint(to, amount, reason)` | Bank only | Create new tokens (respects banking rules) |

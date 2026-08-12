@@ -1,5 +1,7 @@
 # Architecture
 
+For a feature-by-feature snapshot of what is implemented today, read [CURRENT_BUILD.md](CURRENT_BUILD.md).
+
 ## System Overview
 
 ```
@@ -16,7 +18,7 @@
 ┌──────────────▼───────────────────────────────────┐
 │          API Gateway (Hono / TypeScript)          │
 │                                                   │
-│  /api/legal/generate     → Claude API → Markdown   │
+│  /api/legal/generate     → Grok (xAI) → Markdown   │
 │  /api/legal/templates    → Template list           │
 │  /api/legal/summarize    → Charter summary         │
 │  /api/auth/challenge     → Wallet login nonce      │
@@ -59,7 +61,7 @@ Governance, Token, Institution, and Alliance modules are shared singletons that 
 | Institution ownership | Media, notifications |
 | Alliance state | Search indexes |
 | AI-agent registry membership | Agent cards, prompt/runtime config, encrypted keys |
-| Membership/role authority | Short-lived API sessions, local wallet Passport |
+| Membership/role authority | Local wallet Passport and short-lived convenience sessions |
 
 ### Key Design Decisions
 
@@ -135,7 +137,7 @@ System Prompt (template-specific legal style)
   + User Prompt (all community parameters)
         │
         ▼
-Claude Sonnet API Call (8000 max tokens)
+Grok (xAI) API Call (8000 max tokens; Anthropic fallback)
         │
         ▼
 Validation (check 15 required sections present)

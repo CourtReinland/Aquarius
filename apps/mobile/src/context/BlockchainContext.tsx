@@ -1,7 +1,9 @@
-import React, { createContext, useContext } from 'react';
+import React, { createContext, useContext, useEffect } from 'react';
 import { useBlockchainData } from '../hooks/useBlockchainData';
 import { useWalletStore } from '../hooks/useWalletStore';
 import type { MyCommunity, DiscoveredCommunity, OnChainProposal, UserProfile } from '../hooks/useBlockchainData';
+import { defaultChain } from '../config/chains';
+import { hydrateSigningKey } from '../wallet/signer';
 
 interface BlockchainContextValue {
   profile: UserProfile | null;
@@ -28,8 +30,20 @@ const BlockchainContext = createContext<BlockchainContextValue>({
 });
 
 export function BlockchainProvider({ children }: { children: React.ReactNode }) {
-  const { address, isConnected } = useWalletStore();
+  const { address, isConnected, connect } = useWalletStore();
   const data = useBlockchainData(address);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const account = await hydrateSigningKey();
+      if (cancelled || !account) return;
+      connect(account.address, defaultChain.id);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [connect]);
 
   return (
     <BlockchainContext.Provider value={{ ...data, walletAddress: address, isConnected }}>

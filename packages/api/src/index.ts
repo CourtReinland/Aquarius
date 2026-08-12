@@ -1,5 +1,15 @@
+// Load packages/api/.env if present (keys for Blue/legal generation; gitignored)
+try {
+  process.loadEnvFile(new URL('../.env', import.meta.url).pathname);
+} catch {
+  /* no .env — rely on exported shell env */
+}
+
 import { serve } from '@hono/node-server';
-import { app } from './app.js';
+import { assertProductionAuthSecret } from './lib/env.js';
+import app from './app.js';
+
+assertProductionAuthSecret();
 
 const port = Number(process.env.PORT) || 3001;
 

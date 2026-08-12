@@ -47,7 +47,7 @@ export const TEMPLATE_DESCRIPTIONS: Record<string, string> = {
 };
 
 /**
- * Build the system prompt for Claude based on template choice.
+ * Build the system prompt for the legal generator based on template choice.
  */
 export function buildSystemPrompt(template: string): string {
   const base = `You are a legal document generator for the Aquarius community governance platform.

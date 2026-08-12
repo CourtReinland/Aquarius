@@ -1,15 +1,43 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { secureHeaders } from 'hono/secure-headers';
 import { communityRoutes } from './routes/community.js';
 import { healthRoutes } from './routes/health.js';
 import { legalRoutes } from './routes/legal.js';
 import { agentRoutes } from './routes/agents.js';
 import { authRoutes } from './routes/auth.js';
+import { blueRoutes } from './routes/blue.js';
+import { resolveCorsOrigins } from './lib/env.js';
 
-export function createAquariusApiApp() {
+export function createApp() {
   const app = new Hono();
+  const allowedOrigins = resolveCorsOrigins();
 
-  app.use('/*', cors());
+  app.use(
+    '/*',
+    secureHeaders({
+      xFrameOptions: 'DENY',
+      xContentTypeOptions: 'nosniff',
+      referrerPolicy: 'no-referrer',
+      // JSON API over mixed local/prod hosts — do not pin HSTS from the API process.
+      strictTransportSecurity: false,
+    })
+  );
+
+  app.use(
+    '/*',
+    cors({
+      origin: (origin) => {
+        // Non-browser clients (native mobile, curl) often omit Origin.
+        if (!origin) return '';
+        return allowedOrigins.includes(origin) ? origin : '';
+      },
+      allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowHeaders: ['Content-Type', 'Authorization'],
+      exposeHeaders: ['Retry-After'],
+      maxAge: 600,
+    })
+  );
 
   app.get('/', (c) => c.json({
     service: 'aquarius-api',
@@ -22,6 +50,7 @@ export function createAquariusApiApp() {
       agents: '/api/agents',
       createAgent: '/api/agents/create',
       authChallenge: '/api/auth/challenge',
+      blue: '/api/blue',
     },
   }));
 
@@ -30,8 +59,14 @@ export function createAquariusApiApp() {
   app.route('/api/legal', legalRoutes);
   app.route('/api/agents', agentRoutes);
   app.route('/api/auth', authRoutes);
+  app.route('/api/blue', blueRoutes);
 
   return app;
 }
 
-export const app = createAquariusApiApp();
+/** Alias kept for Agent Foundry discovery tests. */
+export const createAquariusApiApp = createApp;
+
+const app = createApp();
+export default app;
+export { app };

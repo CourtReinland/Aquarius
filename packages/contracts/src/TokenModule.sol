@@ -48,6 +48,10 @@ contract TokenModule {
     address public bank;            // The bank controller (multi-sig or governance)
     bool public initialized;
 
+    /// @notice Address that deployed this token instance.
+    /// @dev Only the deployer may call `initialize` (deploy+init should be atomic).
+    address public immutable deployer;
+
     // ─── ERC-20 Events ────────────────────────────────────────────────
 
     event Transfer(address indexed from, address indexed to, uint256 value);
@@ -74,8 +78,14 @@ contract TokenModule {
 
     // ─── Initialization ───────────────────────────────────────────────
 
+    constructor() {
+        deployer = msg.sender;
+    }
+
     /**
      * @notice Initialize the community token and mint initial supply.
+     * @dev Only callable by the deployer. Prefer deploy+initialize in one tx
+     *      so bank/community cannot be frontrun-initialized by a third party.
      * @param _name Token name (e.g. "Skateville Coin")
      * @param _symbol Token symbol (e.g. "SKATE")
      * @param _community The community contract this token belongs to
@@ -91,6 +101,7 @@ contract TokenModule {
         uint256 _initialSupply,
         BankingConfig calldata _config
     ) external {
+        require(msg.sender == deployer, "Only deployer");
         require(!initialized, "Already initialized");
         require(bytes(_name).length > 0, "Name required");
         require(_community != address(0), "Invalid community");

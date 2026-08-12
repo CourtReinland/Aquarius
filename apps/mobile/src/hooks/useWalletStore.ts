@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export interface WalletSession {
   token: string;
@@ -17,10 +18,12 @@ export interface LinkedWallet {
 }
 
 /**
- * Simple wallet state store.
- * In the MVP we use a "dev wallet" approach where the user enters
- * or generates a private key locally. In production this will be
- * replaced with WalletConnect / Privy / Coinbase Smart Wallet.
+ * Public wallet / Passport state.
+ *
+ * The private key is NOT stored here. Signing material lives in
+ * `src/wallet/signer.ts` + SecureStore (see keyStorage). This store only
+ * keeps address, connection flags, API session, and linked-wallet metadata
+ * in AsyncStorage under `aquarius-wallet-passport`.
  */
 interface WalletState {
   address: `0x${string}` | null;
@@ -37,47 +40,104 @@ interface WalletState {
   disconnect: () => void;
 }
 
-export const useWalletStore = create<WalletState>()((set) => ({
-  address: null,
-  isConnected: false,
-  chainId: null,
+type StoredWalletState = Pick<WalletState, 'session' | 'linkedWallets'>;
+
+const STORAGE_KEY = 'aquarius-wallet-passport';
+const EMPTY_STORED_STATE: StoredWalletState = {
   session: null,
   linkedWallets: [],
+};
 
-  connect: (address, chainId) =>
-    set({ address, isConnected: true, chainId }),
+async function readStoredWalletState(): Promise<StoredWalletState> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    if (!raw) return EMPTY_STORED_STATE;
 
-  setSession: (session) =>
-    set({ session }),
+    const parsed = JSON.parse(raw) as Partial<StoredWalletState>;
+    return {
+      session: parsed.session ?? null,
+      linkedWallets: parsed.linkedWallets ?? [],
+    };
+  } catch {
+    return EMPTY_STORED_STATE;
+  }
+}
 
-  linkWallet: (wallet) =>
-    set((state) => {
-      const normalized = wallet.address.toLowerCase();
-      const existing = state.linkedWallets.find(
-        (linked) => linked.address.toLowerCase() === normalized
-      );
-      const nextWallet: LinkedWallet = {
-        ...wallet,
-        addedAt: existing?.addedAt ?? wallet.addedAt ?? new Date().toISOString(),
-      };
+async function writeStoredWalletState(state: WalletState) {
+  try {
+    await AsyncStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        session: state.session,
+        linkedWallets: state.linkedWallets,
+      } satisfies StoredWalletState)
+    );
+  } catch {
+    // Storage is best-effort; the in-memory wallet state remains authoritative.
+  }
+}
 
-      return {
-        linkedWallets: [
-          nextWallet,
-          ...state.linkedWallets.filter(
-            (linked) => linked.address.toLowerCase() !== normalized
-          ),
-        ],
-      };
-    }),
+export const useWalletStore = create<WalletState>()((set, get) => {
+  readStoredWalletState().then((stored) => {
+    set(stored);
+  });
 
-  unlinkWallet: (address) =>
-    set((state) => ({
-      linkedWallets: state.linkedWallets.filter(
-        (linked) => linked.address.toLowerCase() !== address.toLowerCase()
-      ),
-    })),
+  const persistCurrentState = () => {
+    void writeStoredWalletState(get());
+  };
 
-  disconnect: () =>
-    set({ address: null, isConnected: false, chainId: null, session: null }),
-}));
+  return {
+    address: null,
+    isConnected: false,
+    chainId: null,
+    session: null,
+    linkedWallets: [],
+
+    connect: (address, chainId) => {
+      set({ address, isConnected: true, chainId });
+      persistCurrentState();
+    },
+
+    setSession: (session) => {
+      set({ session });
+      persistCurrentState();
+    },
+
+    linkWallet: (wallet) => {
+      set((state) => {
+        const normalized = wallet.address.toLowerCase();
+        const existing = state.linkedWallets.find(
+          (linked) => linked.address.toLowerCase() === normalized
+        );
+        const nextWallet: LinkedWallet = {
+          ...wallet,
+          addedAt: existing?.addedAt ?? wallet.addedAt ?? new Date().toISOString(),
+        };
+
+        return {
+          linkedWallets: [
+            nextWallet,
+            ...state.linkedWallets.filter(
+              (linked) => linked.address.toLowerCase() !== normalized
+            ),
+          ],
+        };
+      });
+      persistCurrentState();
+    },
+
+    unlinkWallet: (address) => {
+      set((state) => ({
+        linkedWallets: state.linkedWallets.filter(
+          (linked) => linked.address.toLowerCase() !== address.toLowerCase()
+        ),
+      }));
+      persistCurrentState();
+    },
+
+    disconnect: () => {
+      set({ address: null, isConnected: false, chainId: null, session: null });
+      persistCurrentState();
+    },
+  };
+});
