@@ -1,16 +1,10 @@
 import {
-  createPublicClient,
-  createWalletClient,
-  http,
   type Address,
   type Hash,
 } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
 import { defaultChain } from '../config/chains';
 import { allianceModuleAbi } from '../config/abis';
-
-const chain = defaultChain;
-const publicClient = createPublicClient({ chain, transport: http() });
+import { getPublicClient, getWalletClient } from '../wallet/signer';
 
 export interface AllianceData {
   communityA: Address;
@@ -25,6 +19,7 @@ export async function getAlliance(
   allianceAddress: Address,
   allianceId: bigint
 ): Promise<AllianceData> {
+  const publicClient = await getPublicClient();
   const result = await publicClient.readContract({
     address: allianceAddress,
     abi: allianceModuleAbi,
@@ -41,6 +36,7 @@ export async function isAllied(
   communityA: Address,
   communityB: Address
 ): Promise<boolean> {
+  const publicClient = await getPublicClient();
   return publicClient.readContract({
     address: allianceAddress,
     abi: allianceModuleAbi,
@@ -50,36 +46,38 @@ export async function isAllied(
 }
 
 export async function acceptAlliance(
-  privateKey: `0x${string}`,
   allianceAddress: Address,
   allianceId: bigint
 ): Promise<Hash> {
-  const account = privateKeyToAccount(privateKey);
-  const walletClient = createWalletClient({ account, chain, transport: http() });
+  const walletClient = await getWalletClient();
+  const publicClient = await getPublicClient();
 
   const txHash = await walletClient.writeContract({
     address: allianceAddress,
     abi: allianceModuleAbi,
     functionName: 'acceptAlliance',
     args: [allianceId],
+    chain: defaultChain,
+    account: walletClient.account,
   });
   await publicClient.waitForTransactionReceipt({ hash: txHash });
   return txHash;
 }
 
 export async function declineAlliance(
-  privateKey: `0x${string}`,
   allianceAddress: Address,
   allianceId: bigint
 ): Promise<Hash> {
-  const account = privateKeyToAccount(privateKey);
-  const walletClient = createWalletClient({ account, chain, transport: http() });
+  const walletClient = await getWalletClient();
+  const publicClient = await getPublicClient();
 
   const txHash = await walletClient.writeContract({
     address: allianceAddress,
     abi: allianceModuleAbi,
     functionName: 'declineAlliance',
     args: [allianceId],
+    chain: defaultChain,
+    account: walletClient.account,
   });
   await publicClient.waitForTransactionReceipt({ hash: txHash });
   return txHash;

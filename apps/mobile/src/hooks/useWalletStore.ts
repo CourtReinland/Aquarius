@@ -18,10 +18,12 @@ export interface LinkedWallet {
 }
 
 /**
- * Simple wallet state store.
- * In the MVP we use a "dev wallet" approach where the user enters
- * or generates a private key locally. In production this will be
- * replaced with WalletConnect / Privy / Coinbase Smart Wallet.
+ * Public wallet / Passport state.
+ *
+ * The private key is NOT stored here. Signing material lives in
+ * `src/wallet/signer.ts` + SecureStore (see keyStorage). This store only
+ * keeps address, connection flags, API session, and linked-wallet metadata
+ * in AsyncStorage under `aquarius-wallet-passport`.
  */
 interface WalletState {
   address: `0x${string}` | null;

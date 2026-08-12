@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
-import { privateKeyToAccount } from 'viem/accounts';
 import { API_BASE } from '../config/api';
+import { getWalletClient } from '../wallet/signer';
 import { useWalletStore, type WalletSession } from './useWalletStore';
 
 interface ChallengeResponse {
@@ -20,20 +20,24 @@ interface VerifyResponse {
   session: WalletSession;
 }
 
+/**
+ * SIWE challenge/verify against the same wallet that signs transactions.
+ */
 export function useWalletAuth() {
   const { setSession, linkWallet } = useWalletStore();
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const signInWithPrivateKey = useCallback(
-    async (privateKey: `0x${string}`, address: `0x${string}`, chainId: number) => {
+  const signInWithConnectedWallet = useCallback(
+    async (address: `0x${string}`, chainId: number) => {
       setIsSigningIn(true);
       setError(null);
 
       try {
-        const account = privateKeyToAccount(privateKey);
-        if (account.address.toLowerCase() !== address.toLowerCase()) {
-          throw new Error('Private key does not match connected wallet');
+        const walletClient = await getWalletClient();
+        const signerAddress = walletClient.account.address;
+        if (signerAddress.toLowerCase() !== address.toLowerCase()) {
+          throw new Error('Connected signing key does not match wallet address');
         }
 
         const challengeResponse = await fetch(`${API_BASE}/api/auth/challenge`, {
@@ -53,7 +57,10 @@ export function useWalletAuth() {
         }
 
         const { challenge } = challengeResult as ChallengeResponse;
-        const signature = await account.signMessage({ message: challenge.message });
+        const signature = await walletClient.signMessage({
+          account: walletClient.account,
+          message: challenge.message,
+        });
 
         const verifyResponse = await fetch(`${API_BASE}/api/auth/verify`, {
           method: 'POST',
@@ -92,7 +99,7 @@ export function useWalletAuth() {
   );
 
   return {
-    signInWithPrivateKey,
+    signInWithConnectedWallet,
     isSigningIn,
     error,
   };

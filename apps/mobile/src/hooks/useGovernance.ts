@@ -1,21 +1,16 @@
 import {
-  createPublicClient,
-  createWalletClient,
-  http,
   type Address,
   type Hash,
   parseEther,
 } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
 import { defaultChain } from '../config/chains';
 import { governanceModuleAbi } from '../config/abis';
+import { getPublicClient, getWalletClient } from '../wallet/signer';
 
 /**
- * Hooks for interacting with the GovernanceModule contract.
+ * GovernanceModule interactions.
+ * Writes go through getWalletClient() — the connected wallet signs.
  */
-
-const chain = defaultChain;
-const publicClient = createPublicClient({ chain, transport: http() });
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -53,6 +48,7 @@ export async function getProposal(
   governanceAddress: Address,
   proposalId: bigint
 ): Promise<ProposalData> {
+  const publicClient = await getPublicClient();
   const result = await publicClient.readContract({
     address: governanceAddress,
     abi: governanceModuleAbi,
@@ -77,6 +73,7 @@ export async function getTimeRemaining(
   governanceAddress: Address,
   proposalId: bigint
 ): Promise<bigint> {
+  const publicClient = await getPublicClient();
   return publicClient.readContract({
     address: governanceAddress,
     abi: governanceModuleAbi,
@@ -90,6 +87,7 @@ export async function hasVoted(
   proposalId: bigint,
   voter: Address
 ): Promise<boolean> {
+  const publicClient = await getPublicClient();
   return publicClient.readContract({
     address: governanceAddress,
     abi: governanceModuleAbi,
@@ -102,6 +100,7 @@ export async function getYesVoters(
   governanceAddress: Address,
   proposalId: bigint
 ): Promise<Address[]> {
+  const publicClient = await getPublicClient();
   return publicClient.readContract({
     address: governanceAddress,
     abi: governanceModuleAbi,
@@ -113,7 +112,6 @@ export async function getYesVoters(
 // ─── Write Functions ──────────────────────────────────────────────
 
 export async function createProposal(
-  privateKey: `0x${string}`,
   governanceAddress: Address,
   params: {
     communityAddress: Address;
@@ -129,8 +127,8 @@ export async function createProposal(
     institutionName: string;
   }
 ): Promise<{ txHash: Hash; proposalId: bigint }> {
-  const account = privateKeyToAccount(privateKey);
-  const walletClient = createWalletClient({ account, chain, transport: http() });
+  const walletClient = await getWalletClient();
+  const publicClient = await getPublicClient();
 
   const txHash = await walletClient.writeContract({
     address: governanceAddress,
@@ -149,9 +147,11 @@ export async function createProposal(
       parseEther(params.fundingThresholdEth || '0'),
       params.institutionName,
     ],
+    chain: defaultChain,
+    account: walletClient.account,
   });
 
-  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+  await publicClient.waitForTransactionReceipt({ hash: txHash });
 
   // Parse ProposalCreated event to get proposal ID
   // For now return 0n as placeholder — event parsing will be refined
@@ -159,14 +159,13 @@ export async function createProposal(
 }
 
 export async function castVote(
-  privateKey: `0x${string}`,
   governanceAddress: Address,
   proposalId: bigint,
   support: boolean,
   fundingAmountEth?: string
 ): Promise<Hash> {
-  const account = privateKeyToAccount(privateKey);
-  const walletClient = createWalletClient({ account, chain, transport: http() });
+  const walletClient = await getWalletClient();
+  const publicClient = await getPublicClient();
 
   const value = fundingAmountEth ? parseEther(fundingAmountEth) : 0n;
 
@@ -176,6 +175,8 @@ export async function castVote(
     functionName: 'castVote',
     args: [proposalId, support],
     value,
+    chain: defaultChain,
+    account: walletClient.account,
   });
 
   await publicClient.waitForTransactionReceipt({ hash: txHash });
@@ -183,18 +184,19 @@ export async function castVote(
 }
 
 export async function finalizeProposal(
-  privateKey: `0x${string}`,
   governanceAddress: Address,
   proposalId: bigint
 ): Promise<Hash> {
-  const account = privateKeyToAccount(privateKey);
-  const walletClient = createWalletClient({ account, chain, transport: http() });
+  const walletClient = await getWalletClient();
+  const publicClient = await getPublicClient();
 
   const txHash = await walletClient.writeContract({
     address: governanceAddress,
     abi: governanceModuleAbi,
     functionName: 'finalizeProposal',
     args: [proposalId],
+    chain: defaultChain,
+    account: walletClient.account,
   });
 
   await publicClient.waitForTransactionReceipt({ hash: txHash });

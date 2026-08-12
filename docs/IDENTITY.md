@@ -38,22 +38,24 @@ The app and API can make the product fast and pleasant, but they should not beco
 | API auth routes | `packages/api/src/routes/auth.ts` |
 | Mobile auth hook | `apps/mobile/src/hooks/useWalletAuth.ts` |
 | Local Passport store | `apps/mobile/src/hooks/useWalletStore.ts` |
+| Signing key storage | `apps/mobile/src/wallet/keyStorage.ts` |
+| WalletClient / signer | `apps/mobile/src/wallet/signer.ts` |
 | Wallet connect UI | `apps/mobile/src/components/WalletConnect.tsx` |
 | Agent auth enforcement | `packages/api/src/routes/agents.ts` |
 
 ## Implemented Flow
 
-1. The user creates or imports a local dev wallet.
+1. The user creates or imports a personal local wallet (SecureStore on native). Optionally, with `EXPO_PUBLIC_AQUARIUS_DEV_SIGNER=1`, they may choose Anvil account #0 for local gas — never as a silent default.
 2. The app requests `POST /api/auth/challenge`.
 3. The API returns a Sign-In with Ethereum style message with a one-time nonce and a five-minute expiration.
-4. The wallet signs the message locally.
+4. The same `getWalletClient()` wallet that will sign transactions signs the message locally.
 5. The app sends the signature to `POST /api/auth/verify`.
 6. The API verifies the signature with `viem.verifyMessage`.
 7. The API deletes the nonce so the challenge cannot be reused.
 8. The API returns a 12-hour session token.
 9. The app stores that session and linked wallet in a local Aquarius Passport.
 
-The private key never goes to the API.
+The private key never goes to the API and is never written into the Passport AsyncStorage blob.
 
 ## Challenge Details
 
@@ -83,7 +85,7 @@ This token does not grant blockchain authority. It only lets the API know, for a
 
 ## Local Aquarius Passport
 
-The mobile app persists Passport state in AsyncStorage under `aquarius-wallet-passport`.
+The mobile app persists Passport metadata in AsyncStorage under `aquarius-wallet-passport`.
 
 Persisted today:
 
@@ -93,6 +95,13 @@ Persisted today:
 - Chain ID.
 - Wallet label.
 - `addedAt` and `lastSignedInAt` timestamps.
+
+Signing keys are stored separately:
+
+- Native: `expo-secure-store` (Keychain / Keystore).
+- Web preview: AsyncStorage fallback under `aquarius-signing-key-web-insecure` — **not safe for real funds**.
+
+Threat model summary: device compromise or rooted/jailbroken hosts can still expose keys; the goal is to avoid plaintext key material in the Passport blob, logs, or the API. Production should move toward external connectors and ERC-4337 smart accounts so the app never holds a long-lived raw EOA key.
 
 The Passport is intentionally local-first. It lets one human group multiple wallets on one device without publishing a public wallet-link graph. In production, users should be able to opt into public wallet-link attestations only when that helps them.
 
@@ -170,9 +179,10 @@ The first implementation stores linked wallets locally. A future public linking 
 
 ## Production Path
 
-1. Add WalletConnect/Coinbase Wallet so users sign with external self-custody wallets.
-2. Support ERC-1271 verification for smart contract wallets.
-3. Add ERC-4337 smart accounts for passkeys, gas sponsorship, and recovery.
-4. Store only public profile metadata off-chain; keep rights and obligations contract-defined.
-5. Make indexers replaceable by reconstructing state from contract events.
-6. Add optional encrypted backup for local Passport metadata, never raw private keys.
+1. Add WalletConnect v2 / Coinbase Wallet so users sign with external self-custody wallets.
+2. Support hardware wallets where the private key never enters app memory.
+3. Support ERC-1271 verification for smart contract wallets.
+4. Add ERC-4337 smart accounts for passkeys, gas sponsorship, and recovery.
+5. Store only public profile metadata off-chain; keep rights and obligations contract-defined.
+6. Make indexers replaceable by reconstructing state from contract events.
+7. Add optional encrypted backup for local Passport metadata, never raw private keys.
