@@ -138,6 +138,7 @@ Aquarius agents are intended to be first-class community members. The current bu
 - Operator funding / on-chain registration are gated by `AGENT_OPERATOR_ACTIONS_ENABLED` (and optional allowlist) with an `AGENT_MAX_INITIAL_FUNDING_ETH` cap.
 - `GET /api/agents` is auth-scoped to the caller's creations; public cards stay at `GET /api/agents/:id/card`.
 - Auth challenge/verify are rate-limited; CORS is origin-allowlisted; API responses include basic security headers.
+- Paid AI routes (legal generate/summarize, Blue chat) require a wallet session and are rate-limited per IP + address.
 
 ### Planned Next
 
@@ -194,7 +195,8 @@ The API is a Hono server in `packages/api`.
 | `/health` | Built | Health check |
 | `/api/auth/*` | Built | Wallet challenge, verify, session, logout |
 | `/api/agents/*` | Built | Agent create/list/card |
-| `/api/legal/*` | Built | Legal generation, template listing, summarization |
+| `/api/legal/*` | Built | Legal generation/summarization (**session required**); templates public |
+| `/api/blue/*` | Built | Blue chat (**session required**); status returns `{ available }` only |
 | `/api/communities/*` | Placeholder | Community CRUD facade, future contract-backed API |
 
 ### Important Environment Variables
@@ -202,7 +204,8 @@ The API is a Hono server in `packages/api`.
 | Variable | Purpose |
 |---|---|
 | `PORT` | API port, defaults to `3001` |
-| `ANTHROPIC_API_KEY` | Enables legal document generation |
+| `ANTHROPIC_API_KEY` | Enables legal document generation and Blue Claude fallback |
+| `XAI_API_KEY` | Enables Blue Grok provider (preferred when set) |
 | `AQUARIUS_AUTH_SECRET` | HMAC secret for API session tokens (**required in production**) |
 | `AQUARIUS_ENV` / `NODE_ENV` | Set to `production` to enforce auth-secret boot checks |
 | `AQUARIUS_CORS_ORIGINS` | Comma-separated CORS allowlist (dev defaults to localhost Expo/web) |
@@ -216,9 +219,13 @@ The API is a Hono server in `packages/api`.
 | `AGENT_RUNTIME_BASE_URL` | Future A2A/MCP runtime base URL |
 | `EXPO_PUBLIC_AQUARIUS_API_BASE_URL` | Mobile bundle API target override |
 
-## Legal Generation
+## Legal Generation & Blue AI
 
-The API can generate legal charters/bylaws using Anthropic Claude from community wizard parameters.
+The API can generate legal charters/bylaws using Anthropic Claude from community wizard parameters, and Blue can answer free-form questions via Grok/Claude.
+
+**Session required:** `POST /api/legal/generate`, `POST /api/legal/summarize`, and `POST /api/blue/chat` all require a valid Aquarius wallet session (`Authorization: Bearer …`). `GET /api/legal/templates` stays public. `GET /api/blue/status` only returns `{ available: boolean }` (does not advertise which provider keys are set).
+
+These paid AI routes are also rate-limited in-process per IP + session address (stricter for legal generate than Blue chat).
 
 Templates:
 

@@ -3,7 +3,13 @@ import { z } from 'zod';
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { getAddress, isAddress, verifyMessage } from 'viem';
 import { hasAuthSecretConfigured, isProductionEnv } from '../lib/env.js';
-import { authAddressLimiter, authIpLimiter } from '../lib/rate-limit.js';
+import {
+  authAddressLimiter,
+  authIpLimiter,
+  rateLimitResponse,
+  __resetRateLimitersForTests,
+} from '../lib/rate-limit.js';
+import { clientIp } from '../lib/request.js';
 
 export const authRoutes = new Hono();
 
@@ -147,14 +153,6 @@ export function getSessionFromAuthorization(header: string | undefined) {
   return token ? verifySessionToken(token) : null;
 }
 
-function clientIp(c: { req: { header: (name: string) => string | undefined } }) {
-  const forwarded = c.req.header('x-forwarded-for');
-  if (forwarded) {
-    return forwarded.split(',')[0]?.trim() || 'unknown';
-  }
-  return c.req.header('x-real-ip') ?? 'unknown';
-}
-
 export function purgeExpiredChallenges(now = Date.now()) {
   for (const [nonce, record] of challenges) {
     if (Date.parse(record.expirationTime) <= now) {
@@ -176,27 +174,11 @@ function storeChallenge(nonce: string, record: ChallengeRecord) {
   challenges.set(nonce, record);
 }
 
-function rateLimitResponse(
-  c: { json: (body: unknown, status?: number) => Response; header: (name: string, value: string) => void },
-  retryAfterSeconds: number
-) {
-  c.header('Retry-After', String(retryAfterSeconds));
-  return c.json(
-    {
-      error: 'Too many requests',
-      message: 'Auth rate limit exceeded. Wait before retrying challenge or verify.',
-      retryAfterSeconds,
-    },
-    429
-  );
-}
-
 /** Test helper — clears in-memory auth state. */
 export function __resetAuthStateForTests() {
   challenges.clear();
   sessions.clear();
-  authIpLimiter.reset();
-  authAddressLimiter.reset();
+  __resetRateLimitersForTests();
 }
 
 /**
@@ -211,12 +193,20 @@ authRoutes.post('/challenge', async (c) => {
 
     const ipLimit = authIpLimiter.check(`challenge:ip:${ip}`);
     if (!ipLimit.allowed) {
-      return rateLimitResponse(c, ipLimit.retryAfterSeconds);
+      return rateLimitResponse(
+        c,
+        ipLimit.retryAfterSeconds,
+        'Auth rate limit exceeded. Wait before retrying challenge or verify.'
+      );
     }
 
     const addressLimit = authAddressLimiter.check(`challenge:addr:${addressKey}`);
     if (!addressLimit.allowed) {
-      return rateLimitResponse(c, addressLimit.retryAfterSeconds);
+      return rateLimitResponse(
+        c,
+        addressLimit.retryAfterSeconds,
+        'Auth rate limit exceeded. Wait before retrying challenge or verify.'
+      );
     }
 
     const nonce = randomBytes(12).toString('base64url');
@@ -273,12 +263,20 @@ authRoutes.post('/verify', async (c) => {
     const ip = clientIp(c);
     const ipLimit = authIpLimiter.check(`verify:ip:${ip}`);
     if (!ipLimit.allowed) {
-      return rateLimitResponse(c, ipLimit.retryAfterSeconds);
+      return rateLimitResponse(
+        c,
+        ipLimit.retryAfterSeconds,
+        'Auth rate limit exceeded. Wait before retrying challenge or verify.'
+      );
     }
 
     const addressLimit = authAddressLimiter.check(`verify:addr:${parsed.address.toLowerCase()}`);
     if (!addressLimit.allowed) {
-      return rateLimitResponse(c, addressLimit.retryAfterSeconds);
+      return rateLimitResponse(
+        c,
+        addressLimit.retryAfterSeconds,
+        'Auth rate limit exceeded. Wait before retrying challenge or verify.'
+      );
     }
 
     const challenge = challenges.get(parsed.nonce);

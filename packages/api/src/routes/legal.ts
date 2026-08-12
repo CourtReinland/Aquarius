@@ -6,8 +6,21 @@ import {
   generateCharterSummary,
 } from '../services/legal-generator.js';
 import type { CommunityParams } from '../services/legal-templates.js';
+import { getSessionFromAuthorization, type SessionRecord } from './auth.js';
+import {
+  legalGenerateAddressLimiter,
+  legalGenerateIpLimiter,
+  legalSummarizeAddressLimiter,
+  legalSummarizeIpLimiter,
+  rateLimitResponse,
+} from '../lib/rate-limit.js';
+import { clientIp } from '../lib/request.js';
 
 export const legalRoutes = new Hono();
+
+/** Bound summarize payloads so clients cannot ship unbounded bodies. */
+const MAX_CHARTER_CHARS = 50_000;
+const MAX_COMMUNITY_NAME_CHARS = 100;
 
 // ─── Input Validation Schema ──────────────────────────────────────
 
@@ -33,24 +46,80 @@ const communityParamsSchema = z.object({
   leverageRatio: z.number().min(1).max(9).default(1),
 });
 
+const summarizeSchema = z.object({
+  charter: z.string().min(1).max(MAX_CHARTER_CHARS),
+  communityName: z.string().min(1).max(MAX_COMMUNITY_NAME_CHARS),
+});
+
+type SessionGate =
+  | { ok: true; session: SessionRecord }
+  | { ok: false; response: Response };
+
+function requireSession(c: {
+  req: { header: (name: string) => string | undefined };
+  json: (body: unknown, status?: number) => Response;
+}): SessionGate {
+  const session = getSessionFromAuthorization(c.req.header('authorization'));
+  if (!session) {
+    return {
+      ok: false,
+      response: c.json(
+        {
+          error: 'Wallet session required',
+          message: 'Sign in with your wallet before using AI legal generation.',
+        },
+        401
+      ),
+    };
+  }
+  return { ok: true, session };
+}
+
 // ─── Routes ───────────────────────────────────────────────────────
 
 /**
  * POST /api/legal/generate
  * Generate a complete charter + bylaws from community parameters.
+ * Requires a valid Aquarius wallet session. Rate-limited (strict).
  */
 legalRoutes.post('/generate', async (c) => {
   try {
+    const auth = requireSession(c);
+    if (!auth.ok) return auth.response;
+
+    const ip = clientIp(c);
+    const addressKey = auth.session.address.toLowerCase();
+
+    const ipLimit = legalGenerateIpLimiter.check(`legal-generate:ip:${ip}`);
+    if (!ipLimit.allowed) {
+      return rateLimitResponse(
+        c,
+        ipLimit.retryAfterSeconds,
+        'Legal generation rate limit exceeded. Wait before retrying.'
+      );
+    }
+
+    const addressLimit = legalGenerateAddressLimiter.check(
+      `legal-generate:addr:${addressKey}`
+    );
+    if (!addressLimit.allowed) {
+      return rateLimitResponse(
+        c,
+        addressLimit.retryAfterSeconds,
+        'Legal generation rate limit exceeded. Wait before retrying.'
+      );
+    }
+
     const body = await c.req.json();
     const params = communityParamsSchema.parse(body) as CommunityParams;
 
     if (!process.env.ANTHROPIC_API_KEY) {
       return c.json(
         {
-          error: 'ANTHROPIC_API_KEY not configured',
-          hint: 'Set ANTHROPIC_API_KEY environment variable',
+          error: 'Legal generation unavailable',
+          message: 'The legal generation service is not configured on this server.',
         },
-        500
+        503
       );
     }
 
@@ -83,10 +152,11 @@ legalRoutes.post('/generate', async (c) => {
         400
       );
     }
+    console.error('[legal/generate] failed:', error?.message ?? error);
     return c.json(
       {
         error: 'Generation failed',
-        message: error?.message?.substring(0, 200),
+        message: 'Unable to generate legal document. Try again later.',
       },
       500
     );
@@ -96,25 +166,71 @@ legalRoutes.post('/generate', async (c) => {
 /**
  * POST /api/legal/summarize
  * Generate a brief summary of an existing charter.
+ * Requires a valid Aquarius wallet session. Rate-limited.
  */
 legalRoutes.post('/summarize', async (c) => {
   try {
-    const { charter, communityName } = await c.req.json();
+    const auth = requireSession(c);
+    if (!auth.ok) return auth.response;
 
-    if (!charter || !communityName) {
-      return c.json({ error: 'charter and communityName required' }, 400);
+    const ip = clientIp(c);
+    const addressKey = auth.session.address.toLowerCase();
+
+    const ipLimit = legalSummarizeIpLimiter.check(`legal-summarize:ip:${ip}`);
+    if (!ipLimit.allowed) {
+      return rateLimitResponse(
+        c,
+        ipLimit.retryAfterSeconds,
+        'Legal summarize rate limit exceeded. Wait before retrying.'
+      );
+    }
+
+    const addressLimit = legalSummarizeAddressLimiter.check(
+      `legal-summarize:addr:${addressKey}`
+    );
+    if (!addressLimit.allowed) {
+      return rateLimitResponse(
+        c,
+        addressLimit.retryAfterSeconds,
+        'Legal summarize rate limit exceeded. Wait before retrying.'
+      );
+    }
+
+    const { charter, communityName } = summarizeSchema.parse(await c.req.json());
+
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return c.json(
+        {
+          error: 'Legal summarization unavailable',
+          message: 'The legal summarization service is not configured on this server.',
+        },
+        503
+      );
     }
 
     const summary = await generateCharterSummary(charter, communityName);
     return c.json({ success: true, summary });
   } catch (error: any) {
-    return c.json({ error: error?.message }, 500);
+    if (error?.name === 'ZodError') {
+      return c.json(
+        { error: 'Invalid parameters', details: error.issues },
+        400
+      );
+    }
+    console.error('[legal/summarize] failed:', error?.message ?? error);
+    return c.json(
+      {
+        error: 'Summarization failed',
+        message: 'Unable to summarize charter. Try again later.',
+      },
+      500
+    );
   }
 });
 
 /**
  * GET /api/legal/templates
- * List available charter templates.
+ * List available charter templates (static; public).
  */
 legalRoutes.get('/templates', (c) => {
   return c.json({
