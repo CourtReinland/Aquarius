@@ -48,6 +48,25 @@ forge script script/Deploy.s.sol:DeployScript \
 
 After deployment, copy contract addresses into `apps/mobile/src/config/chains.ts`.
 
+## Security hardening
+
+Focused guards added for the highest-risk paths (see [../../docs/CONTRACTS.md](../../docs/CONTRACTS.md#security-hardening--assumptions)):
+
+| Threat | Fix |
+|---|---|
+| Refund reentrancy / stuck ETH on hostile receivers | `nonReentrant` + CEI queue into `claimableRefunds` + best-effort push + `claimRefund()` pull |
+| Smart-proposal constructor reenters `executeProposal` | Status set to `Executed` before `CREATE`; permissionless execution kept (intentional) |
+| `TokenModule.initialize` / bare `Community.initialize` frontrun | Deployer-only initializer (`deployer == msg.sender` at construction) |
+| Malicious ERC-20 reenters `distributeDividends` | `nonReentrant` + `outstandingShares` accounting + zero-address/amount checks |
+| Alliance / vote edge inputs | Zero-address + initialized community checks; reject unexpected ETH on free votes |
+
+In-repo `src/utils/ReentrancyGuard.sol` (OZ-style) avoids a full OpenZeppelin submodule for a single primitive.
+
+```bash
+forge test --match-contract SecurityHardeningTest
+forge test
+```
+
 ## Reference
 
 See [../../docs/CONTRACTS.md](../../docs/CONTRACTS.md) for function-level details and [../../docs/CURRENT_BUILD.md](../../docs/CURRENT_BUILD.md) for the product-level current build summary.

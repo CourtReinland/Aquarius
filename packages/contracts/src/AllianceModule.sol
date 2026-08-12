@@ -58,9 +58,13 @@ contract AllianceModule {
         bool _freeTravel,
         bool _votingRights
     ) external returns (uint256 allianceId) {
-        Community a = Community(_communityA);
-        require(a.isFounder(msg.sender), "Only founders can propose alliances");
+        require(_communityA != address(0) && _communityB != address(0), "Invalid community");
         require(_communityA != _communityB, "Cannot ally with self");
+
+        Community a = Community(_communityA);
+        Community b = Community(_communityB);
+        require(a.initialized() && b.initialized(), "Invalid community");
+        require(a.isFounder(msg.sender), "Only founders can propose alliances");
 
         allianceId = nextAllianceId++;
 
