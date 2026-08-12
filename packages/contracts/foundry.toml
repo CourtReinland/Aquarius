@@ -9,3 +9,27 @@ optimizer_runs = 200
 
 [profile.default.fuzz]
 runs = 256
+
+# Keep default `forge test` CI-friendly. For audit campaigns, use profile `audit`
+# or override: FOUNDRY_INVARIANT_RUNS=1000 FOUNDRY_INVARIANT_DEPTH=50 forge test --match-path test/invariant/
+[profile.default.invariant]
+runs = 64
+depth = 15
+fail_on_revert = false
+
+[profile.audit]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc = "0.8.24"
+via_ir = true
+optimizer = true
+optimizer_runs = 200
+
+[profile.audit.fuzz]
+runs = 1000
+
+[profile.audit.invariant]
+runs = 1000
+depth = 50
+fail_on_revert = false
