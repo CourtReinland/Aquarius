@@ -360,7 +360,7 @@ describe('API security hardening', () => {
         body: JSON.stringify(legalGeneratePayload),
       });
       lastStatus = res.status;
-      // Without ANTHROPIC_API_KEY, under-limit requests return 503 after the limiter check.
+      // Without XAI_API_KEY / ANTHROPIC_API_KEY, under-limit requests return 503 after the limiter check.
       if (res.status === 429) break;
       expect([503, 429]).toContain(res.status);
     }

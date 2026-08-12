@@ -4,6 +4,7 @@ import {
   generateLegalDocument,
   validateDocument,
   generateCharterSummary,
+  isLegalAiConfigured,
 } from '../services/legal-generator.js';
 import type { CommunityParams } from '../services/legal-templates.js';
 import { getSessionFromAuthorization, type SessionRecord } from './auth.js';
@@ -113,11 +114,11 @@ legalRoutes.post('/generate', async (c) => {
     const body = await c.req.json();
     const params = communityParamsSchema.parse(body) as CommunityParams;
 
-    if (!process.env.ANTHROPIC_API_KEY) {
+    if (!isLegalAiConfigured()) {
       return c.json(
         {
-          error: 'Legal generation unavailable',
-          message: 'The legal generation service is not configured on this server.',
+          error: 'AI provider not configured',
+          message: 'No AI provider is configured on this server.',
         },
         503
       );
@@ -198,11 +199,11 @@ legalRoutes.post('/summarize', async (c) => {
 
     const { charter, communityName } = summarizeSchema.parse(await c.req.json());
 
-    if (!process.env.ANTHROPIC_API_KEY) {
+    if (!isLegalAiConfigured()) {
       return c.json(
         {
-          error: 'Legal summarization unavailable',
-          message: 'The legal summarization service is not configured on this server.',
+          error: 'AI provider not configured',
+          message: 'No AI provider is configured on this server.',
         },
         503
       );

@@ -51,10 +51,10 @@ const createAgentSchema = z.object({
   registerOnChain: z.boolean().optional(),
   runtime: z
     .object({
-      provider: z.string().max(80).default('anthropic'),
-      model: z.string().max(120).default('claude-sonnet'),
+      provider: z.string().max(80).default('xai'),
+      model: z.string().max(120).default('grok-4'),
     })
-    .default({ provider: 'anthropic', model: 'claude-sonnet' }),
+    .default({ provider: 'xai', model: 'grok-4' }),
 });
 
 type CreateAgentInput = z.infer<typeof createAgentSchema>;

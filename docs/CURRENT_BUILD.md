@@ -32,7 +32,7 @@ No centralized username/password server is required for the root identity model.
 | Institutions | Create institutions, allocate shares, create/offer/accept/vacate positions | On-chain |
 | Dividends | Proportional token dividend distribution for institution shareholders | On-chain |
 | Alliances | Propose, accept, decline, dissolve inter-community alliances | On-chain |
-| Legal docs | Generate charters/bylaws with Anthropic Claude from community parameters | API |
+| Legal docs | Generate charters/bylaws with Grok (xAI) from community parameters; Anthropic optional fallback | API |
 | Explorer UI | 3D/2D community explorer and membership dashboard | Mobile app + chain reads |
 | Android deployment | Release APK builds and installs on a connected Pixel 3a | Native Android project |
 
@@ -204,8 +204,10 @@ The API is a Hono server in `packages/api`.
 | Variable | Purpose |
 |---|---|
 | `PORT` | API port, defaults to `3001` |
-| `ANTHROPIC_API_KEY` | Enables legal document generation and Blue Claude fallback |
-| `XAI_API_KEY` | Enables Blue Grok provider (preferred when set) |
+| `XAI_API_KEY` | Primary AI provider (Grok) for legal generate/summarize and Blue chat |
+| `ANTHROPIC_API_KEY` | Optional Anthropic fallback when Grok is unset or a Grok call fails |
+| `LEGAL_GROK_MODEL` / `AQUARIUS_GROK_MODEL` | Legal long-form Grok model (default `grok-4`) |
+| `BLUE_GROK_MODEL` | Blue chat Grok model (default `grok-4-fast-non-reasoning`) |
 | `AQUARIUS_AUTH_SECRET` | HMAC secret for API session tokens (**required in production**) |
 | `AQUARIUS_ENV` / `NODE_ENV` | Set to `production` to enforce auth-secret boot checks |
 | `AQUARIUS_CORS_ORIGINS` | Comma-separated CORS allowlist (dev defaults to localhost Expo/web) |
@@ -221,7 +223,7 @@ The API is a Hono server in `packages/api`.
 
 ## Legal Generation & Blue AI
 
-The API can generate legal charters/bylaws using Anthropic Claude from community wizard parameters, and Blue can answer free-form questions via Grok/Claude.
+Paid AI features use **Grok (xAI) as the primary provider** when `XAI_API_KEY` is set. Anthropic Claude is an optional fallback. Legal generation defaults to `grok-4` for long-form charters; Blue uses a faster Grok model for short replies.
 
 **Session required:** `POST /api/legal/generate`, `POST /api/legal/summarize`, and `POST /api/blue/chat` all require a valid Aquarius wallet session (`Authorization: Bearer …`). `GET /api/legal/templates` stays public. `GET /api/blue/status` only returns `{ available: boolean }` (does not advertise which provider keys are set).
 
