@@ -39,6 +39,21 @@ export function createApp() {
     })
   );
 
+  app.get('/', (c) => c.json({
+    service: 'aquarius-api',
+    status: 'ok',
+    message: 'Aquarius API is running. Use the route links below instead of the API root.',
+    routes: {
+      health: '/health',
+      communities: '/api/communities',
+      legalTemplates: '/api/legal/templates',
+      agents: '/api/agents',
+      createAgent: '/api/agents/create',
+      authChallenge: '/api/auth/challenge',
+      blue: '/api/blue',
+    },
+  }));
+
   app.route('/health', healthRoutes);
   app.route('/api/communities', communityRoutes);
   app.route('/api/legal', legalRoutes);
@@ -49,5 +64,9 @@ export function createApp() {
   return app;
 }
 
+/** Alias kept for Agent Foundry discovery tests. */
+export const createAquariusApiApp = createApp;
+
 const app = createApp();
 export default app;
+export { app };

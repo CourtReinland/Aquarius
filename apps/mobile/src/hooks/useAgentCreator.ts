@@ -13,6 +13,63 @@ export interface CreateAgentParams {
   promptTemplate: string;
   initialFundingEth: string;
   registerOnChain?: boolean;
+  origin?: {
+    mode?: 'scratch' | 'template' | 'clone' | 'hire' | 'import';
+    parentAgentId?: string | null;
+    templateId?: string | null;
+    lineageHash?: string | null;
+  };
+  identity?: {
+    biography?: string;
+    pronouns?: string | null;
+    anthropomorphism?: 'minimal' | 'balanced' | 'high' | 'agent-discretion';
+  };
+  embodiment?: {
+    avatarUri?: string | null;
+    avatarManifestUri?: string | null;
+    portraitUri?: string | null;
+    portraitProvider?: string;
+    portraitSeed?: string | null;
+    style?: string | null;
+    bodyArchetype?: string | null;
+    outfit?: string | null;
+    voiceId?: string | null;
+    selfieEndpoint?: string | null;
+  };
+  personality?: {
+    traits?: Record<string, number>;
+    greeting?: string | null;
+    refusalStyle?: string | null;
+    conflictStyle?: string | null;
+  };
+  permissionPolicy?: {
+    permissionClass?: 'visitor' | 'resident' | 'worker' | 'delegate' | 'officer' | 'sovereign';
+    permissionPolicyUri?: string | null;
+    permissionPolicyHash?: string | null;
+  };
+  memoryPolicy?: {
+    mode?: 'session-only' | 'personal-companion' | 'community-memory' | 'officer-memory' | 'clone-safe';
+    remembersPrivateChats?: boolean;
+    remembersCommunityEvents?: boolean;
+    cloneSafe?: boolean;
+    retentionDays?: number | null;
+    editableAfterCreation?: boolean;
+  };
+  runtime?: {
+    provider?: string;
+    model?: string;
+    harness?: 'hermes' | 'openclaw' | 'custom';
+  };
+  economics?: {
+    hireable?: boolean;
+    cloneable?: boolean;
+    license?: string | null;
+    hirePrice?: string | null;
+    clonePrice?: string | null;
+    feeRecipient?: string | null;
+    revenueSplitBps?: number | null;
+    feeMode?: 'off-chain' | 'on-chain';
+  };
 }
 
 export interface CreatedAgent {
@@ -41,19 +98,99 @@ export interface CreatedAgent {
       mcp: string;
     };
   };
+  passport: {
+    schemaVersion: 'aquarius.agent-passport.v1';
+    identity: {
+      name: string;
+      role: string;
+      anthropomorphism: string;
+      biography: string;
+      pronouns: string | null;
+    };
+    embodiment: {
+      portraitProvider: string;
+      portraitSeed: string | null;
+      avatarUri: string | null;
+      avatarManifestUri: string | null;
+      portraitUri: string | null;
+      voiceId: string | null;
+      bodyArchetype: string | null;
+      style: string | null;
+      outfit: string | null;
+    };
+    capabilities: {
+      public: string[];
+      permissionClass: string;
+    };
+    memoryPolicy: {
+      mode: string;
+      cloneSafe: boolean;
+      remembersPrivateChats: boolean;
+      remembersCommunityEvents: boolean;
+    };
+    personality: {
+      greeting: string | null;
+    };
+    economics: {
+      hireable: boolean;
+      cloneable: boolean;
+      feeMode: string;
+    };
+    runtime: {
+      endpoints: {
+        passport: string;
+      };
+    };
+  };
 }
 
 interface CreateAgentResult {
   success: true;
   agent: CreatedAgent;
+  firstMoment?: {
+    introMessage: string;
+    passportUrl: string;
+    portraitStatus: string;
+    suggestedCommunityPost: string;
+  };
   warnings: string[];
+}
+
+export interface AgentChatTurn {
+  success: true;
+  agentId: string;
+  sessionId: string;
+  message: {
+    id: string;
+    role: 'agent';
+    content: string;
+    createdAt: string;
+  };
+  runtime: {
+    harness: string;
+    provider: string;
+    model: string;
+    status: string;
+  };
+  memoryBoundary: {
+    persisted: boolean;
+    reason: string;
+  };
+  toolPolicy: {
+    allowedTools: string[];
+    approvalRequired: boolean;
+    reason: string;
+  };
 }
 
 export function useAgentCreator() {
   const { session } = useWalletStore();
   const [isCreating, setIsCreating] = useState(false);
+  const [isChatting, setIsChatting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [agent, setAgent] = useState<CreatedAgent | null>(null);
+  const [firstMoment, setFirstMoment] = useState<CreateAgentResult['firstMoment'] | null>(null);
+  const [chatTurn, setChatTurn] = useState<AgentChatTurn | null>(null);
 
   const createAgent = useCallback(async (params: CreateAgentParams) => {
     setIsCreating(true);
@@ -83,8 +220,10 @@ export function useAgentCreator() {
         throw new Error(result.message || result.error || `HTTP ${response.status}`);
       }
 
-      const created = (result as CreateAgentResult).agent;
+      const typedResult = result as CreateAgentResult;
+      const created = typedResult.agent;
       setAgent(created);
+      setFirstMoment(typedResult.firstMoment ?? null);
       return created;
     } catch (err: any) {
       const message = err?.message ?? 'Agent creation failed';
@@ -95,10 +234,48 @@ export function useAgentCreator() {
     }
   }, [session?.address, session?.token]);
 
+  const testChat = useCallback(async (message: string, targetAgent = agent) => {
+    if (!targetAgent) return null;
+
+    setIsChatting(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${API_BASE}/api/agents/${encodeURIComponent(targetAgent.agentId)}/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.token ? { Authorization: `Bearer ${session.token}` } : {}),
+        },
+        body: JSON.stringify({ message }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || result.message || `HTTP ${response.status}`);
+      }
+
+      const turn = result as AgentChatTurn;
+      setChatTurn(turn);
+      return turn;
+    } catch (err: any) {
+      const messageText = err?.message ?? 'Agent chat failed';
+      setError(messageText);
+      return null;
+    } finally {
+      setIsChatting(false);
+    }
+  }, [agent, session?.token]);
+
   return {
     createAgent,
+    testChat,
     isCreating,
+    isChatting,
     error,
     agent,
+    firstMoment,
+    chatTurn,
   };
 }
