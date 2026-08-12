@@ -1,31 +1,16 @@
-import { useMemo } from 'react';
 import {
-  createPublicClient,
-  createWalletClient,
-  http,
   type Address,
   type Hash,
 } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
 import { defaultChain } from '../config/chains';
 import { communityFactoryAbi } from '../config/abis';
-import { CONTRACT_ADDRESSES } from '../config/chains';
 import type { CommunityWizardState } from '../types/community';
+import { getPublicClient, getWalletClient } from '../wallet/signer';
 
 /**
- * Hook to interact with the CommunityFactory contract.
- *
- * For the MVP, we use a local private key approach.
- * This will be replaced with wagmi's useWriteContract
- * once WalletConnect/Privy is integrated.
+ * CommunityFactory interactions.
+ * Writes go through getWalletClient() — the connected wallet signs.
  */
-
-const chain = defaultChain;
-
-const publicClient = createPublicClient({
-  chain,
-  transport: http(),
-});
 
 interface CreateCommunityResult {
   txHash: Hash;
@@ -36,17 +21,12 @@ interface CreateCommunityResult {
  * Deploy a new community to the blockchain.
  */
 export async function createCommunityOnChain(
-  privateKey: `0x${string}`,
   factoryAddress: Address,
   wizard: CommunityWizardState
 ): Promise<CreateCommunityResult> {
-  const account = privateKeyToAccount(privateKey);
-
-  const walletClient = createWalletClient({
-    account,
-    chain,
-    transport: http(),
-  });
+  const walletClient = await getWalletClient();
+  const publicClient = await getPublicClient();
+  const account = walletClient.account;
 
   // Map wizard state to contract parameters
   const bylaws = {
@@ -77,6 +57,8 @@ export async function createCommunityOnChain(
       wizard.jurisdiction || '',
       wizard.allowCorporateMembers,
     ],
+    chain: defaultChain,
+    account,
   });
 
   // Wait for transaction receipt
@@ -104,6 +86,7 @@ export async function createCommunityOnChain(
 export async function getCommunityCount(
   factoryAddress: Address
 ): Promise<bigint> {
+  const publicClient = await getPublicClient();
   return publicClient.readContract({
     address: factoryAddress,
     abi: communityFactoryAbi,
@@ -117,6 +100,7 @@ export async function getCommunityCount(
 export async function getAllCommunities(
   factoryAddress: Address
 ): Promise<Address[]> {
+  const publicClient = await getPublicClient();
   return publicClient.readContract({
     address: factoryAddress,
     abi: communityFactoryAbi,
@@ -131,6 +115,7 @@ export async function getFounderCommunities(
   factoryAddress: Address,
   founder: Address
 ): Promise<Address[]> {
+  const publicClient = await getPublicClient();
   return publicClient.readContract({
     address: factoryAddress,
     abi: communityFactoryAbi,

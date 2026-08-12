@@ -20,7 +20,8 @@ import { createCommunityOnChain } from '../hooks/useCommunityFactory';
 import { useWalletStore } from '../hooks/useWalletStore';
 import { CONTRACT_ADDRESSES, defaultChain } from '../config/chains';
 import { showAlert } from '../utils/alert';
-import { getDevKey } from '../utils/devWallet';
+import { WalletConnect } from '../components/WalletConnect';
+import { getSigningAccount, isDevAnvilSignerActive } from '../wallet/signer';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'FoundCommunity'>;
@@ -54,10 +55,11 @@ export function FoundCommunityWizard({ navigation }: Props) {
     console.log('[Aquarius] handleFinish called');
 
     const factoryAddress = CONTRACT_ADDRESSES[defaultChain.id]?.communityFactory;
-    const devKey = getDevKey() || (globalThis as any).__aquariusDevKey;
+    const signingAccount = await getSigningAccount();
 
     console.log('[Aquarius] Factory:', factoryAddress);
-    console.log('[Aquarius] DevKey exists:', !!devKey);
+    console.log('[Aquarius] Signer connected:', !!signingAccount);
+    console.log('[Aquarius] Signer mode:', isDevAnvilSignerActive() ? 'dev-anvil' : 'local-key');
     console.log('[Aquarius] Chain ID:', defaultChain.id);
 
     if (!factoryAddress) {
@@ -68,8 +70,8 @@ export function FoundCommunityWizard({ navigation }: Props) {
       return;
     }
 
-    if (!devKey) {
-      showAlert('No Wallet', 'Please connect a wallet on the home screen first.');
+    if (!signingAccount) {
+      showAlert('No Wallet', 'Please connect a wallet below before deploying.');
       return;
     }
 
@@ -92,7 +94,6 @@ export function FoundCommunityWizard({ navigation }: Props) {
       console.log('[Aquarius] Founders:', wizardCopy.founderAddresses);
 
       const result = await createCommunityOnChain(
-        devKey,
         factoryAddress,
         wizardCopy
       );
@@ -128,6 +129,8 @@ export function FoundCommunityWizard({ navigation }: Props) {
           <Text style={styles.headerTitle}>Found Community</Text>
           <Text style={styles.stepIndicator}>{step} / 3</Text>
         </View>
+
+        <WalletConnect />
 
         {/* Error display */}
         {deployError && (
