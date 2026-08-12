@@ -14,9 +14,9 @@ import { clientIp } from '../lib/request.js';
  *
  * Requires a valid Aquarius wallet session. Rate-limited per IP + session.
  *
- * Provider selection (cheapest-first for dev):
- *   1. Grok (xAI)    — when XAI_API_KEY is set (OpenAI-compatible endpoint)
- *   2. Claude        — when ANTHROPIC_API_KEY is set
+ * Provider selection (Grok primary per Court):
+ *   1. Grok (xAI)    — intended primary when XAI_API_KEY is set
+ *   2. Claude        — optional Anthropic fallback when ANTHROPIC_API_KEY is set
  *   3. 503           — web client falls back to scripted answers
  */
 
