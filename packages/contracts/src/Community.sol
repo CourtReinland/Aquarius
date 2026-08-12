@@ -44,6 +44,10 @@ contract Community {
 
     bool public initialized;
 
+    /// @notice Address that deployed this instance (CommunityFactory in normal flow).
+    /// @dev Only the deployer may call `initialize`, preventing frontrun init of a bare deploy.
+    address public immutable deployer;
+
     // ─── ERC-8004 AI Agent Registry ───────────────────────────────────
     // Lightweight implementation of the ERC-8004 "Trustless Agents" identity
     // concept: a community maintains its own on-chain list of AI agents that
@@ -97,8 +101,13 @@ contract Community {
 
     // ─── Initialization ───────────────────────────────────────────────
 
+    constructor() {
+        deployer = msg.sender;
+    }
+
     /**
-     * @notice Initialize the community. Called once by CommunityFactory.
+     * @notice Initialize the community. Called once by CommunityFactory
+     *         (or the contract deployer) in the same transaction as deploy.
      */
     function initialize(
         string calldata _name,
@@ -109,6 +118,7 @@ contract Community {
         string calldata _jurisdiction,
         bool _allowCorporateMembers
     ) external onlyOnce {
+        require(msg.sender == deployer, "Only deployer");
         require(_founders.length > 0, "Need at least one founder");
         require(bytes(_name).length > 0, "Name required");
 

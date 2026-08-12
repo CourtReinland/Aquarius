@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Community} from "./Community.sol";
+import {ReentrancyGuard} from "./utils/ReentrancyGuard.sol";
 
 /**
  * @title GovernanceModule
@@ -18,8 +19,17 @@ import {Community} from "./Community.sol";
  *   - Vote Now button with countdown timer
  *   - Quorum rules (majority, supermajority, min members)
  *   - Funding threshold + share allocation on yes vote
+ *
+ * Security notes:
+ *   - Refunds use checks-effects-interactions and a nonReentrant guard.
+ *     Failed pushes credit `claimableRefunds` for a pull claim.
+ *   - `executeProposal` is permissionless by design (anyone may deploy a
+ *     Passed smart proposal). Status is flipped to Executed *before* CREATE
+ *     so a malicious constructor cannot reenter and double-deploy.
+ *   - Passed proposal ETH remains in this contract until a future treasury
+ *     / institution funding flow is added (out of scope here).
  */
-contract GovernanceModule {
+contract GovernanceModule is ReentrancyGuard {
     // ─── Types ────────────────────────────────────────────────────────
 
     enum ProposalStatus {
@@ -89,6 +99,9 @@ contract GovernanceModule {
     mapping(uint256 => mapping(address => Vote)) public votes;
     mapping(uint256 => address[]) public yesVoters;  // Track for share allocation
 
+    // Pull-payment balances for refunds that could not be pushed (or after queueing)
+    mapping(address => uint256) public claimableRefunds;
+
     // ─── Smart Proposal extension ─────────────────────────────────────
     // When a proposal passes, if it carries creation bytecode that bytecode
     // is deployed as a new contract and its address is stored here. This is
@@ -136,6 +149,8 @@ contract GovernanceModule {
 
     event ProposalExecuted(uint256 indexed proposalId);
 
+    event RefundClaimed(address indexed account, uint256 amount);
+
     // ─── Core Functions ───────────────────────────────────────────────
 
     /**
@@ -156,6 +171,7 @@ contract GovernanceModule {
         uint256 _fundingThreshold,
         string calldata _institutionName
     ) external returns (uint256 proposalId) {
+        require(_community != address(0), "Invalid community");
         Community community = Community(_community);
 
         // Check proposer has permission
@@ -229,6 +245,7 @@ contract GovernanceModule {
         string calldata _institutionName,
         bytes calldata _bytecode
     ) external returns (uint256 proposalId) {
+        require(_community != address(0), "Invalid community");
         require(_bytecode.length > 0, "Bytecode required");
 
         Community community = Community(_community);
@@ -275,13 +292,19 @@ contract GovernanceModule {
     /**
      * @notice Execute a passed smart proposal by deploying its bytecode as
      *         a live contract. Callable by anyone once the proposal is Passed.
+     * @dev Permissionless execution is intentional. Status is set to Executed
+     *      before CREATE so constructors cannot reenter and double-deploy.
+     *      Callers should treat proposal bytecode as untrusted code.
      */
-    function executeProposal(uint256 _proposalId) external returns (address deployed) {
+    function executeProposal(uint256 _proposalId) external nonReentrant returns (address deployed) {
         Proposal storage p = proposals[_proposalId];
         require(p.status == ProposalStatus.Passed, "Proposal not passed");
         bytes memory code = smartProposalBytecode[_proposalId];
         require(code.length > 0, "Not a smart proposal");
         require(deployedContracts[_proposalId] == address(0), "Already executed");
+
+        // Effects before interaction (CREATE runs constructor code)
+        p.status = ProposalStatus.Executed;
 
         assembly ("memory-safe") {
             deployed := create(0, add(code, 0x20), mload(code))
@@ -289,7 +312,6 @@ contract GovernanceModule {
         require(deployed != address(0), "Deploy failed");
 
         deployedContracts[_proposalId] = deployed;
-        p.status = ProposalStatus.Executed;
 
         emit SmartContractDeployed(_proposalId, deployed, p.community);
         emit ProposalExecuted(_proposalId);
@@ -303,7 +325,7 @@ contract GovernanceModule {
     function castVote(
         uint256 _proposalId,
         bool _support
-    ) external payable {
+    ) external payable nonReentrant {
         Proposal storage p = proposals[_proposalId];
 
         require(p.status == ProposalStatus.Active, "Proposal not active");
@@ -321,13 +343,15 @@ contract GovernanceModule {
         if (_support && p.fundingCostPerYes > 0) {
             require(msg.value >= p.fundingCostPerYes, "Insufficient funding");
             p.totalFunded += msg.value;
+        } else {
+            require(msg.value == 0, "Unexpected ETH");
         }
 
         // Record vote
         votes[_proposalId][msg.sender] = Vote({
             voted: true,
             support: _support,
-            fundedAmount: msg.value
+            fundedAmount: (_support && p.fundingCostPerYes > 0) ? msg.value : 0
         });
 
         if (_support) {
@@ -344,7 +368,7 @@ contract GovernanceModule {
      * @notice Finalize a proposal after voting period ends.
      * @dev Anyone can call this once the time has expired.
      */
-    function finalizeProposal(uint256 _proposalId) external {
+    function finalizeProposal(uint256 _proposalId) external nonReentrant {
         Proposal storage p = proposals[_proposalId];
 
         require(p.status == ProposalStatus.Active, "Not active");
@@ -386,7 +410,7 @@ contract GovernanceModule {
     /**
      * @notice Cancel a proposal. Only the proposer or a community founder can cancel.
      */
-    function cancelProposal(uint256 _proposalId) external {
+    function cancelProposal(uint256 _proposalId) external nonReentrant {
         Proposal storage p = proposals[_proposalId];
         require(p.status == ProposalStatus.Active, "Not active");
 
@@ -407,6 +431,21 @@ contract GovernanceModule {
             _proposalId, ProposalStatus.Cancelled,
             p.yesVotes, p.noVotes, 0
         );
+    }
+
+    /**
+     * @notice Pull any claimable refund balance (hostile receivers / failed pushes).
+     */
+    function claimRefund() external nonReentrant {
+        uint256 amount = claimableRefunds[msg.sender];
+        require(amount > 0, "Nothing to claim");
+
+        claimableRefunds[msg.sender] = 0;
+
+        (bool sent,) = msg.sender.call{value: amount}("");
+        require(sent, "Refund transfer failed");
+
+        emit RefundClaimed(msg.sender, amount);
     }
 
     // ─── View Functions ───────────────────────────────────────────────
@@ -456,17 +495,34 @@ contract GovernanceModule {
 
     // ─── Internal ─────────────────────────────────────────────────────
 
+    /**
+     * @dev Queue refunds (effects), then attempt push transfers. Failed pushes
+     *      leave balances in `claimableRefunds` for `claimRefund`.
+     */
     function _refundVoters(uint256 _proposalId) internal {
+        Proposal storage p = proposals[_proposalId];
         address[] memory voters = yesVoters[_proposalId];
+
+        // Effects: move all funded amounts into claimable balances first
         for (uint256 i = 0; i < voters.length; i++) {
             uint256 amount = votes[_proposalId][voters[i]].fundedAmount;
             if (amount > 0) {
                 votes[_proposalId][voters[i]].fundedAmount = 0;
-                (bool sent,) = voters[i].call{value: amount}("");
-                // If refund fails, funds stay in contract (can be recovered by admin)
-                if (!sent) {
-                    votes[_proposalId][voters[i]].fundedAmount = amount;
-                }
+                claimableRefunds[voters[i]] += amount;
+            }
+        }
+        p.totalFunded = 0;
+
+        // Interactions: best-effort push (EOA-friendly); hostile receivers keep claimable
+        for (uint256 i = 0; i < voters.length; i++) {
+            address voter = voters[i];
+            uint256 amount = claimableRefunds[voter];
+            if (amount == 0) continue;
+
+            claimableRefunds[voter] = 0;
+            (bool sent,) = voter.call{value: amount}("");
+            if (!sent) {
+                claimableRefunds[voter] = amount;
             }
         }
     }

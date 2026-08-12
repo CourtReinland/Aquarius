@@ -28,6 +28,10 @@ contract DeployScript is Script {
 
         CommunityFactory factory = new CommunityFactory();
         GovernanceModule governance = new GovernanceModule();
+        // TokenModule.initialize is deployer-only. Treat this as a template
+        // address for clients, or initialize it in this same broadcast tx.
+        // Per-community currencies should `new TokenModule()` + `initialize(...)`
+        // atomically from the same deployer.
         TokenModule tokenTemplate = new TokenModule();
         InstitutionRegistry institutions = new InstitutionRegistry();
         AllianceModule alliance = new AllianceModule();
