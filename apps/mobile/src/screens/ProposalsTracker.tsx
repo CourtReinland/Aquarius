@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { formatEther } from 'viem';
 import { useBlockchain } from '../context/BlockchainContext';
 import { castVote, createProposal } from '../hooks/useGovernance';
-import { getDevKey } from '../utils/devWallet';
+import { getSigningAccount } from '../wallet/signer';
 import { CONTRACT_ADDRESSES, defaultChain } from '../config/chains';
 import { showAlert } from '../utils/alert';
 import type { OnChainProposal } from '../hooks/useBlockchainData';
@@ -34,8 +34,8 @@ export function ProposalsTracker() {
 
   const handleVote = async (support: boolean) => {
     if (!selectedProposal || !govAddress) return;
-    const devKey = getDevKey() || (globalThis as any).__aquariusDevKey;
-    if (!devKey) { showAlert('No Wallet', 'Connect wallet first'); return; }
+    const account = await getSigningAccount();
+    if (!account) { showAlert('No Wallet', 'Connect a wallet from Profile first'); return; }
 
     setVoting(true);
     try {
@@ -43,7 +43,7 @@ export function ProposalsTracker() {
         ? formatEther(selectedProposal.fundingCostPerYes)
         : undefined;
 
-      await castVote(devKey, govAddress, BigInt(selectedProposal.id), support, fundingEth);
+      await castVote(govAddress, BigInt(selectedProposal.id), support, fundingEth);
       showAlert('Vote Cast!', `You voted ${support ? 'YES' : 'NO'}`);
       setVoteModalVisible(false);
       refresh();
@@ -59,12 +59,12 @@ export function ProposalsTracker() {
       showAlert('Missing Fields', 'Enter a title and select a community');
       return;
     }
-    const devKey = getDevKey() || (globalThis as any).__aquariusDevKey;
-    if (!devKey) { showAlert('No Wallet', 'Connect wallet first'); return; }
+    const account = await getSigningAccount();
+    if (!account) { showAlert('No Wallet', 'Connect a wallet from Profile first'); return; }
 
     setCreating(true);
     try {
-      await createProposal(devKey, govAddress, {
+      await createProposal(govAddress, {
         communityAddress: newCommunity as `0x${string}`,
         title: newTitle,
         descriptionIpfsHash: '',

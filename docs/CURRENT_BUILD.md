@@ -72,12 +72,12 @@ The mobile app is the most complete client implementation. It runs as a React Na
 
 ### Mobile Data Flow
 
-- `BlockchainContext` calls `useBlockchainData` for wallet-scoped chain reads.
-- `useWalletStore` persists the local Aquarius Passport using AsyncStorage.
-- `WalletConnect` creates/imports a local dev wallet, then signs in through the auth API.
-- `useWalletAuth` performs the SIWE-style challenge/verify flow.
+- `BlockchainContext` hydrates the signing key from SecureStore, then calls `useBlockchainData` for wallet-scoped chain reads.
+- `useWalletStore` persists Passport metadata (session + linked wallets) in AsyncStorage — never the private key.
+- `WalletConnect` creates/imports a personal local wallet (or opt-in Anvil account #0 when `EXPO_PUBLIC_AQUARIUS_DEV_SIGNER=1`), then signs in through the auth API.
+- `useWalletAuth` performs the SIWE-style challenge/verify flow with the same `getWalletClient()` used for txs.
 - `useAgentCreator` creates agent cards/wallets through the API and sends the signed session when present.
-- Contract write hooks still use the local dev private key for MVP transactions.
+- Contract write hooks sign through `src/wallet/signer.ts` → `getWalletClient()` (no silent shared Anvil key).
 
 ## Wallet-Native Login
 
@@ -110,12 +110,20 @@ Aquarius login is not a centralized account record. It is proof that the current
 | `GET /api/auth/session` | Validate bearer session token |
 | `POST /api/auth/logout` | Revoke bearer session token |
 
+### Signing Modes (Mobile)
+
+| Mode | Flag | Behavior |
+|---|---|---|
+| Secure (default) | unset | Generate/import personal key; persist in SecureStore; sign via `getWalletClient()` |
+| Dev Anvil | `EXPO_PUBLIC_AQUARIUS_DEV_SIGNER=1` | Explicit UI button for Anvil account #0; labeled **DEV SIGNER ACTIVE** |
+
+Web preview cannot use SecureStore and falls back to AsyncStorage for the key — preview-only, not for real funds.
+
 ### Current Limitations
 
 - Session storage is in-memory in the API process (not durable across restarts or replicas).
 - Rate limits are per-process, not shared across multiple API instances.
-- The mobile app currently signs with the MVP local/dev wallet path.
-- Production wallet connectors are planned: WalletConnect, Coinbase Wallet, hardware wallets.
+- Production wallet connectors are planned: WalletConnect v2, Coinbase Wallet, hardware wallets.
 - Smart-contract wallet auth needs ERC-1271 support.
 - Smart-account onboarding should use ERC-4337 in production.
 
@@ -218,6 +226,7 @@ The API is a Hono server in `packages/api`.
 | `AQUARIUS_PUBLIC_API_BASE_URL` | Public base URL used in generated agent cards |
 | `AGENT_RUNTIME_BASE_URL` | Future A2A/MCP runtime base URL |
 | `EXPO_PUBLIC_AQUARIUS_API_BASE_URL` | Mobile bundle API target override |
+| `EXPO_PUBLIC_AQUARIUS_DEV_SIGNER` | Set to `1` to allow opt-in Anvil shared-key signing in the mobile UI |
 
 ## Legal Generation & Blue AI
 
@@ -306,7 +315,7 @@ The Android release APK was built and installed on a physical Pixel 3a.
 - API persistence is in-memory for auth sessions and agents.
 - Contract state reads are direct and local-chain oriented; production should add an indexer.
 - Agent runtime is not autonomous yet.
-- WalletConnect/Coinbase Wallet connectors are planned but not fully integrated into the app flow.
+- External WalletConnect v2 / Coinbase Wallet / hardware connectors are planned but not fully integrated into the app flow.
 - ERC-1271 smart-wallet signature verification is not implemented yet.
 - ERC-4337 account abstraction is planned for production onboarding and agents.
 - IPFS pinning flow for generated legal documents is planned.

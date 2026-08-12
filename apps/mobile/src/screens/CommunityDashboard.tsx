@@ -6,6 +6,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useBlockchain } from '../context/BlockchainContext';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { useWalletStore } from '../hooks/useWalletStore';
+import { WalletConnect } from '../components/WalletConnect';
+import { isDevAnvilSignerActive } from '../wallet/signer';
 
 /**
  * Profile / My Memberships screen.
@@ -16,13 +18,17 @@ export function CommunityDashboard() {
   const { profile, myCommunities, proposals, loading, refresh, walletAddress, isConnected } = useBlockchain();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { session, linkedWallets } = useWalletStore();
+  const usingDevAnvil = isDevAnvilSignerActive();
 
   if (!isConnected || !walletAddress) {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
         <View style={styles.emptyState}>
           <Text style={styles.emptyTitle}>Not Connected</Text>
-          <Text style={styles.emptySubtitle}>Connect a wallet on the home screen to view your profile.</Text>
+          <Text style={styles.emptySubtitle}>
+            Create or import a wallet to view memberships. Keys stay on this device.
+          </Text>
+          <WalletConnect />
         </View>
       </SafeAreaView>
     );
@@ -36,6 +42,8 @@ export function CommunityDashboard() {
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor="#4ECDC4" />}
       >
+        <WalletConnect />
+
         {/* Wallet header */}
         <View style={styles.walletCard}>
           <Text style={styles.walletLabel}>WALLET</Text>
@@ -54,6 +62,7 @@ export function CommunityDashboard() {
             </Text>
             <Text style={styles.sessionMeta}>
               {linkedWallets.length} linked wallet{linkedWallets.length === 1 ? '' : 's'}
+              {usingDevAnvil ? ' · DEV SIGNER' : ''}
             </Text>
           </View>
         </View>
@@ -182,9 +191,9 @@ export function CommunityDashboard() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0D1117' },
   scroll: { padding: 16, gap: 12 },
-  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
-  emptyTitle: { color: '#E6EDF3', fontSize: 20, fontWeight: '700', marginBottom: 8 },
-  emptySubtitle: { color: '#484F58', fontSize: 14, textAlign: 'center' },
+  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'stretch', padding: 24, gap: 12, width: '100%' },
+  emptyTitle: { color: '#E6EDF3', fontSize: 20, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
+  emptySubtitle: { color: '#484F58', fontSize: 14, textAlign: 'center', marginBottom: 8 },
 
   walletCard: { backgroundColor: '#161B22', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#30363D' },
   walletLabel: { color: '#484F58', fontSize: 10, letterSpacing: 2, marginBottom: 4 },

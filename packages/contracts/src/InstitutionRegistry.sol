@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Community} from "./Community.sol";
 import {TokenModule} from "./TokenModule.sol";
+import {ReentrancyGuard} from "./utils/ReentrancyGuard.sol";
 
 /**
  * @title InstitutionRegistry
@@ -20,7 +21,7 @@ import {TokenModule} from "./TokenModule.sol";
  *
  * Institutions are created via passed governance proposals.
  */
-contract InstitutionRegistry {
+contract InstitutionRegistry is ReentrancyGuard {
     // ─── Types ────────────────────────────────────────────────────────
 
     struct Institution {
@@ -67,6 +68,9 @@ contract InstitutionRegistry {
 
     // Community => institution IDs
     mapping(address => uint256[]) public communityInstitutions;
+
+    // Sum of allocated shareholdings per institution (for dividend consistency)
+    mapping(uint256 => uint256) public outstandingShares;
 
     // ─── Events ───────────────────────────────────────────────────────
 
@@ -128,6 +132,7 @@ contract InstitutionRegistry {
         uint256 _totalShares,
         bool _paysDividends
     ) external returns (uint256 institutionId) {
+        require(_community != address(0), "Invalid community");
         Community community = Community(_community);
         require(community.initialized(), "Invalid community");
         require(
@@ -166,6 +171,8 @@ contract InstitutionRegistry {
     ) external {
         Institution storage inst = institutions[_institutionId];
         require(inst.active, "Institution not active");
+        require(_member != address(0), "Invalid member");
+        require(_shares > 0, "Shares must be > 0");
 
         Community community = Community(inst.community);
         require(community.isFounder(msg.sender), "Only founders can allocate shares");
@@ -177,6 +184,7 @@ contract InstitutionRegistry {
         }
 
         shareholdings[_institutionId][_member] += _shares;
+        outstandingShares[_institutionId] += _shares;
 
         emit SharesAllocated(_institutionId, _member, _shares);
     }
@@ -250,6 +258,7 @@ contract InstitutionRegistry {
                 institutionShareholders[instId].push(msg.sender);
             }
             shareholdings[instId][msg.sender] += pos.shareGrant;
+            outstandingShares[instId] += pos.shareGrant;
             emit SharesAllocated(instId, msg.sender, pos.shareGrant);
         }
 
@@ -285,23 +294,27 @@ contract InstitutionRegistry {
     /**
      * @notice Distribute dividends to all shareholders of an institution.
      * @dev The bank calls this with token amounts. Requires token approval.
+     *      nonReentrant guards against malicious ERC-20 callbacks reentering
+     *      mid-loop. Payouts use `outstandingShares` so accounting stays
+     *      consistent even if the holder array has zero-balance entries.
+     *      Note: `Institution.totalShares` is the intended share count; position
+     *      grants may increase `outstandingShares` above that soft target.
      */
     function distributeDividends(
         uint256 _institutionId,
         address _tokenAddress,
         uint256 _totalAmount
-    ) external {
+    ) external nonReentrant {
         Institution storage inst = institutions[_institutionId];
         require(inst.active && inst.paysDividends, "No dividends");
+        require(_tokenAddress != address(0), "Invalid token");
+        require(_totalAmount > 0, "Amount required");
 
         TokenModule token = TokenModule(_tokenAddress);
         address[] memory holders = institutionShareholders[_institutionId];
         require(holders.length > 0, "No shareholders");
 
-        uint256 totalShares = 0;
-        for (uint256 i = 0; i < holders.length; i++) {
-            totalShares += shareholdings[_institutionId][holders[i]];
-        }
+        uint256 totalShares = outstandingShares[_institutionId];
         require(totalShares > 0, "No shares allocated");
 
         for (uint256 i = 0; i < holders.length; i++) {
@@ -309,7 +322,8 @@ contract InstitutionRegistry {
             if (memberShares > 0) {
                 uint256 payout = (_totalAmount * memberShares) / totalShares;
                 if (payout > 0) {
-                    token.transferFrom(msg.sender, holders[i], payout);
+                    bool ok = token.transferFrom(msg.sender, holders[i], payout);
+                    require(ok, "Transfer failed");
                 }
             }
         }
