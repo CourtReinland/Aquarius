@@ -5,27 +5,11 @@ try {
   /* no .env — rely on exported shell env */
 }
 
-import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
-import { cors } from 'hono/cors';
-import { communityRoutes } from './routes/community.js';
-import { healthRoutes } from './routes/health.js';
-import { legalRoutes } from './routes/legal.js';
-import { agentRoutes } from './routes/agents.js';
-import { authRoutes } from './routes/auth.js';
-import { blueRoutes } from './routes/blue.js';
+import { assertProductionAuthSecret } from './lib/env.js';
+import app from './app.js';
 
-const app = new Hono();
-
-app.use('/*', cors());
-
-// Routes
-app.route('/health', healthRoutes);
-app.route('/api/communities', communityRoutes);
-app.route('/api/legal', legalRoutes);
-app.route('/api/agents', agentRoutes);
-app.route('/api/auth', authRoutes);
-app.route('/api/blue', blueRoutes);
+assertProductionAuthSecret();
 
 const port = Number(process.env.PORT) || 3001;
 

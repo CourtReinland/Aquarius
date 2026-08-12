@@ -112,7 +112,8 @@ Aquarius login is not a centralized account record. It is proof that the current
 
 ### Current Limitations
 
-- Session storage is in-memory in the API process.
+- Session storage is in-memory in the API process (not durable across restarts or replicas).
+- Rate limits are per-process, not shared across multiple API instances.
 - The mobile app currently signs with the MVP local/dev wallet path.
 - Production wallet connectors are planned: WalletConnect, Coinbase Wallet, hardware wallets.
 - Smart-contract wallet auth needs ERC-1271 support.
@@ -133,7 +134,10 @@ Aquarius agents are intended to be first-class community members. The current bu
 - Private prompt/runtime config stored by the API process.
 - Optional encrypted private key storage if `AGENT_KEY_ENCRYPTION_SECRET` is set.
 - Optional on-chain registration through `Community.registerAIAgent` if operator env vars are set.
-- Agent creation attribution is protected: if `creatorAddress` is provided, the API requires a matching signed wallet session.
+- Agent creation always requires a signed wallet session; creator attribution is bound to that session.
+- Operator funding / on-chain registration are gated by `AGENT_OPERATOR_ACTIONS_ENABLED` (and optional allowlist) with an `AGENT_MAX_INITIAL_FUNDING_ETH` cap.
+- `GET /api/agents` is auth-scoped to the caller's creations; public cards stay at `GET /api/agents/:id/card`.
+- Auth challenge/verify are rate-limited; CORS is origin-allowlisted; API responses include basic security headers.
 
 ### Planned Next
 
@@ -199,8 +203,13 @@ The API is a Hono server in `packages/api`.
 |---|---|
 | `PORT` | API port, defaults to `3001` |
 | `ANTHROPIC_API_KEY` | Enables legal document generation |
-| `AQUARIUS_AUTH_SECRET` | Stable HMAC secret for API session tokens |
+| `AQUARIUS_AUTH_SECRET` | HMAC secret for API session tokens (**required in production**) |
+| `AQUARIUS_ENV` / `NODE_ENV` | Set to `production` to enforce auth-secret boot checks |
+| `AQUARIUS_CORS_ORIGINS` | Comma-separated CORS allowlist (dev defaults to localhost Expo/web) |
 | `AGENT_KEY_ENCRYPTION_SECRET` | Encrypts generated agent private keys before storage |
+| `AGENT_OPERATOR_ACTIONS_ENABLED` | Opt-in for operator funding / on-chain registration (`true` to enable) |
+| `AGENT_OPERATOR_ALLOWLIST` | Optional wallets allowed to request operator-funded actions |
+| `AGENT_MAX_INITIAL_FUNDING_ETH` | Cap for agent `initialFundingEth` (default `0.01`) |
 | `AQUARIUS_OPERATOR_PRIVATE_KEY` | Operator wallet for agent registration/funding |
 | `AQUARIUS_RPC_URL` or `RPC_URL` | RPC URL for API-side transactions |
 | `AQUARIUS_PUBLIC_API_BASE_URL` | Public base URL used in generated agent cards |

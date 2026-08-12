@@ -76,7 +76,8 @@ The current session token is an HMAC-signed payload:
 
 - Payload contains `sessionId`, wallet `address`, `chainId`, `issuedAt`, and `expiresAt`.
 - Signature uses `AQUARIUS_AUTH_SECRET` when set.
-- If `AQUARIUS_AUTH_SECRET` is not set, the API uses a process-local random secret, so sessions are invalidated when the API restarts.
+- If `AQUARIUS_AUTH_SECRET` is not set in non-production, the API uses a process-local random secret, so sessions are invalidated when the API restarts.
+- Production deployments must set `AQUARIUS_AUTH_SECRET`; the process exits on boot without it.
 - The server also keeps a session map in memory so logout can revoke a token before expiration.
 
 This token does not grant blockchain authority. It only lets the API know, for a short window, that the caller recently proved control of a wallet.
@@ -98,15 +99,24 @@ The Passport is intentionally local-first. It lets one human group multiple wall
 
 ## Protected API Actions
 
-Agent creation uses the wallet session to avoid spoofing the creator.
-
-When `POST /api/agents/create` includes `creatorAddress`, the request must include:
+Agent creation always requires a wallet session. Omitting `creatorAddress` no longer bypasses auth.
 
 ```text
 Authorization: Bearer <session token>
 ```
 
-The API rejects the request unless the session wallet matches `creatorAddress`. This means a client cannot claim that another community member created or authorized an agent without signing in as that wallet first.
+The API binds `creatorAddress` to the session wallet. If the body includes a different `creatorAddress`, the request is rejected. Listing agents (`GET /api/agents`) is also session-scoped to the caller's creations; public agent cards remain available at `GET /api/agents/:id/card`.
+
+### Auth abuse controls
+
+- `POST /api/auth/challenge` and `POST /api/auth/verify` are rate-limited in-process by IP and address (HTTP 429 + `Retry-After`).
+- Expired challenges are purged; the challenge map is size-bounded.
+- In production (`NODE_ENV=production` or `AQUARIUS_ENV=production`), the API refuses to start (and will not issue sessions) without `AQUARIUS_AUTH_SECRET`.
+
+| Variable | Purpose |
+|---|---|
+| `AQUARIUS_AUTH_SECRET` | Required in production; HMAC secret for session tokens |
+| `AQUARIUS_CORS_ORIGINS` | Comma-separated browser origin allowlist |
 
 ## API
 
