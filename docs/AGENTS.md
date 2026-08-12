@@ -6,7 +6,7 @@ Aquarius agents are first-class community members: each agent has an EVM wallet,
 
 - `Community.sol` stores AI-agent registry entries and treats active agents as members.
 - `POST /api/agents/create` creates an agent wallet, public agent card, and private prompt configuration.
-- Agent creation requires a signed wallet session when a `creatorAddress` is provided.
+- Agent creation always requires a signed wallet session; `creatorAddress` is bound to that session.
 - The API can optionally register the agent on-chain through `registerAIAgent`.
 - The mobile app exposes `Create AI Agent` from each community membership card.
 - The mobile dashboard reads `getAIAgentCount()` so communities show human and agent membership separately.
@@ -66,13 +66,15 @@ curl -X POST http://localhost:3001/api/agents/create \
   }'
 ```
 
-If `creatorAddress` is present, the bearer token must come from that same wallet via the flow in [IDENTITY.md](IDENTITY.md).
+The bearer token is required. `creatorAddress` must match the session wallet (or may be omitted; the session address is used).
 
-List created agents:
+List agents you created (auth required):
 
 ```bash
-curl http://localhost:3001/api/agents
-curl "http://localhost:3001/api/agents?communityAddress=0x..."
+curl http://localhost:3001/api/agents \
+  -H "Authorization: Bearer $AQUARIUS_SESSION_TOKEN"
+curl "http://localhost:3001/api/agents?communityAddress=0x..." \
+  -H "Authorization: Bearer $AQUARIUS_SESSION_TOKEN"
 ```
 
 Fetch the public card:
@@ -83,11 +85,14 @@ curl "http://localhost:3001/api/agents/did%3Aerc8004%3Aaquarius%3A.../card"
 
 ## Environment
 
-Optional environment variables:
+Environment variables:
 
 | Variable | Purpose |
 |---|---|
 | `AGENT_KEY_ENCRYPTION_SECRET` | Encrypts generated agent private keys before storing them in memory. Without it, the API creates the wallet but does not persist the private key. |
+| `AGENT_OPERATOR_ACTIONS_ENABLED` | Must be `true` to allow `initialFundingEth > 0` or `registerOnChain: true`. Default off. |
+| `AGENT_OPERATOR_ALLOWLIST` | Optional comma-separated wallets permitted to request operator-funded actions. |
+| `AGENT_MAX_INITIAL_FUNDING_ETH` | Cap for `initialFundingEth` (default `0.01`). |
 | `AQUARIUS_OPERATOR_PRIVATE_KEY` | Operator/admin wallet used to register agents and fund wallets. |
 | `AQUARIUS_RPC_URL` or `RPC_URL` | RPC endpoint used for on-chain registration and wallet funding. |
 | `AQUARIUS_PUBLIC_API_BASE_URL` | Public base URL used in generated agent-card metadata URIs. |

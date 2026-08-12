@@ -1,13 +1,22 @@
 import { Hono } from 'hono';
 import Anthropic from '@anthropic-ai/sdk';
+import { getSessionFromAuthorization } from './auth.js';
+import {
+  blueChatAddressLimiter,
+  blueChatIpLimiter,
+  rateLimitResponse,
+} from '../lib/rate-limit.js';
+import { clientIp } from '../lib/request.js';
 
 /**
  * Blue — the Aquarius companion's brain.
  * POST /api/blue/chat { message, route? } → { reply, provider }
  *
- * Provider selection (cheapest-first for dev):
- *   1. Grok (xAI)    — when XAI_API_KEY is set (OpenAI-compatible endpoint)
- *   2. Claude        — when ANTHROPIC_API_KEY is set
+ * Requires a valid Aquarius wallet session. Rate-limited per IP + session.
+ *
+ * Provider selection (Grok primary per Court):
+ *   1. Grok (xAI)    — intended primary when XAI_API_KEY is set
+ *   2. Claude        — optional Anthropic fallback when ANTHROPIC_API_KEY is set
  *   3. 503           — web client falls back to scripted answers
  */
 
@@ -55,8 +64,8 @@ async function askGrok(userContent: string): Promise<string> {
     }),
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`grok ${res.status}: ${body.slice(0, 200)}`);
+    // Do not surface provider body (may include sensitive details).
+    throw new Error(`grok ${res.status}`);
   }
   const data = (await res.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
@@ -79,8 +88,44 @@ async function askClaude(userContent: string): Promise<string> {
   );
 }
 
+function blueAvailable(): boolean {
+  return Boolean(process.env.XAI_API_KEY || process.env.ANTHROPIC_API_KEY);
+}
+
 blueRoutes.post('/chat', async (c) => {
   try {
+    const session = getSessionFromAuthorization(c.req.header('authorization'));
+    if (!session) {
+      return c.json(
+        {
+          error: 'Wallet session required',
+          message: 'Sign in with your wallet before chatting with Blue.',
+        },
+        401
+      );
+    }
+
+    const ip = clientIp(c);
+    const addressKey = session.address.toLowerCase();
+
+    const ipLimit = blueChatIpLimiter.check(`blue-chat:ip:${ip}`);
+    if (!ipLimit.allowed) {
+      return rateLimitResponse(
+        c,
+        ipLimit.retryAfterSeconds,
+        'Blue chat rate limit exceeded. Wait before retrying.'
+      );
+    }
+
+    const addressLimit = blueChatAddressLimiter.check(`blue-chat:addr:${addressKey}`);
+    if (!addressLimit.allowed) {
+      return rateLimitResponse(
+        c,
+        addressLimit.retryAfterSeconds,
+        'Blue chat rate limit exceeded. Wait before retrying.'
+      );
+    }
+
     const { message, route } = await c.req.json<{ message: string; route?: string }>();
     if (!message || typeof message !== 'string' || message.length > 2000) {
       return c.json({ error: 'message required (≤2000 chars)' }, 400);
@@ -98,19 +143,25 @@ blueRoutes.post('/chat', async (c) => {
     if (process.env.ANTHROPIC_API_KEY) {
       return c.json({ reply: await askClaude(userContent), provider: 'claude' });
     }
-    return c.json({ error: 'no api key configured (set XAI_API_KEY or ANTHROPIC_API_KEY)' }, 503);
+    return c.json(
+      {
+        error: 'Blue unavailable',
+        message: 'No AI provider is configured on this server.',
+      },
+      503
+    );
   } catch (e: any) {
     console.error('[blue] chat failed:', e?.message);
     return c.json({ error: 'blue unavailable' }, 502);
   }
 });
 
-/** GET /api/blue/status — which brain is wired up right now */
+/**
+ * GET /api/blue/status — whether any Blue brain is available.
+ * Does not advertise which provider keys are configured.
+ */
 blueRoutes.get('/status', (c) =>
   c.json({
-    grok: Boolean(process.env.XAI_API_KEY),
-    grokModel: GROK_MODEL,
-    claude: Boolean(process.env.ANTHROPIC_API_KEY),
-    claudeModel: CLAUDE_MODEL,
+    available: blueAvailable(),
   })
 );

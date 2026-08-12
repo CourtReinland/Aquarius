@@ -16,6 +16,7 @@ import {
   randomUUID,
 } from 'node:crypto';
 import { getSessionFromAuthorization } from './auth.js';
+import { maxInitialFundingEth, operatorActionsAllowed } from '../lib/env.js';
 
 export const agentRoutes = new Hono();
 
@@ -36,6 +37,7 @@ const agentRegistrationAbi = [
 const createAgentSchema = z.object({
   communityAddress: z.string().refine(isAddress, 'communityAddress must be an EVM address'),
   communityName: z.string().min(1).max(100).optional(),
+  /** Optional; when present must match the authenticated session address. Session wins. */
   creatorAddress: z.string().refine(isAddress, 'creatorAddress must be an EVM address').optional(),
   name: z.string().min(1).max(80),
   description: z.string().max(1000).default(''),
@@ -49,10 +51,10 @@ const createAgentSchema = z.object({
   registerOnChain: z.boolean().optional(),
   runtime: z
     .object({
-      provider: z.string().max(80).default('anthropic'),
-      model: z.string().max(120).default('claude-sonnet'),
+      provider: z.string().max(80).default('xai'),
+      model: z.string().max(120).default('grok-4'),
     })
-    .default({ provider: 'anthropic', model: 'claude-sonnet' }),
+    .default({ provider: 'xai', model: 'grok-4' }),
 });
 
 type CreateAgentInput = z.infer<typeof createAgentSchema>;
@@ -61,7 +63,7 @@ interface StoredAgent {
   agentId: string;
   communityAddress: `0x${string}`;
   communityName: string | null;
-  creatorAddress: `0x${string}` | null;
+  creatorAddress: `0x${string}`;
   walletAddress: `0x${string}`;
   agentCard: AgentCard;
   metadataUri: string;
@@ -186,17 +188,17 @@ async function registerAgentOnChain(
   agentId: string,
   metadataUri: string
 ): Promise<RegistrationResult> {
-  const operatorPrivateKey = process.env.AQUARIUS_OPERATOR_PRIVATE_KEY as `0x${string}` | undefined;
-  const rpcUrl = process.env.AQUARIUS_RPC_URL ?? process.env.RPC_URL;
-  const shouldRegister = input.registerOnChain ?? Boolean(operatorPrivateKey && rpcUrl);
-
-  if (!shouldRegister) {
+  // Opt-in only — never auto-register just because an operator key is present.
+  if (!input.registerOnChain) {
     return {
       mode: 'skipped',
       transactionHash: null,
-      reason: 'registerOnChain was false and no operator wallet was configured',
+      reason: 'registerOnChain was not requested',
     };
   }
+
+  const operatorPrivateKey = process.env.AQUARIUS_OPERATOR_PRIVATE_KEY as `0x${string}` | undefined;
+  const rpcUrl = process.env.AQUARIUS_RPC_URL ?? process.env.RPC_URL;
 
   if (!operatorPrivateKey || !rpcUrl) {
     return {
@@ -294,10 +296,26 @@ async function fundAgentWallet(
   }
 }
 
+function wantsOperatorAction(input: CreateAgentInput): boolean {
+  try {
+    return Boolean(input.registerOnChain) || parseEther(input.initialFundingEth) > 0n;
+  } catch {
+    return Boolean(input.registerOnChain);
+  }
+}
+
+/** Test helper — clears in-memory agent registry. */
+export function __resetAgentsForTests() {
+  agents.clear();
+}
+
 /**
  * POST /api/agents/create
  * Create an Aquarius AI-agent identity, wallet, agent card, and optional
  * on-chain registration inside a Community contract.
+ *
+ * Always requires a valid wallet session. `creatorAddress` is bound to the
+ * session address (session wins; a mismatched body field is rejected).
  */
 agentRoutes.post('/create', async (c) => {
   try {
@@ -305,44 +323,88 @@ agentRoutes.post('/create', async (c) => {
     const input = createAgentSchema.parse(body);
     const creatorSession = getSessionFromAuthorization(c.req.header('authorization'));
 
-    if (
-      input.creatorAddress &&
-      (!creatorSession || creatorSession.address.toLowerCase() !== input.creatorAddress.toLowerCase())
-    ) {
+    if (!creatorSession) {
       return c.json({
         error: 'Wallet session required',
-        message: 'Sign in with the creator wallet before creating an agent.',
+        message: 'Sign in with your wallet before creating an agent.',
       }, 401);
+    }
+
+    if (
+      input.creatorAddress &&
+      creatorSession.address.toLowerCase() !== input.creatorAddress.toLowerCase()
+    ) {
+      return c.json({
+        error: 'Creator mismatch',
+        message: 'creatorAddress must match the authenticated wallet session.',
+      }, 403);
+    }
+
+    // Session is the source of truth for attribution.
+    const creatorAddress = creatorSession.address;
+    const boundInput: CreateAgentInput = {
+      ...input,
+      creatorAddress,
+    };
+
+    if (wantsOperatorAction(boundInput)) {
+      const gate = operatorActionsAllowed(creatorAddress);
+      if (!gate.ok) {
+        return c.json({
+          error: 'Operator action not permitted',
+          message: gate.reason,
+        }, 403);
+      }
+
+      let requestedWei: bigint;
+      let maxWei: bigint;
+      try {
+        requestedWei = parseEther(boundInput.initialFundingEth);
+        maxWei = parseEther(maxInitialFundingEth());
+      } catch {
+        return c.json({
+          error: 'Invalid funding amount',
+          message: 'initialFundingEth or AGENT_MAX_INITIAL_FUNDING_ETH is not a valid ETH amount.',
+        }, 400);
+      }
+
+      if (requestedWei > maxWei) {
+        return c.json({
+          error: 'Funding cap exceeded',
+          message: `initialFundingEth exceeds AGENT_MAX_INITIAL_FUNDING_ETH (${maxInitialFundingEth()}).`,
+          maxInitialFundingEth: maxInitialFundingEth(),
+        }, 400);
+      }
     }
 
     const createdAt = new Date().toISOString();
 
     const privateKey = generatePrivateKey();
     const account = privateKeyToAccount(privateKey);
-    const communityShort = input.communityAddress.slice(2, 10).toLowerCase();
-    const agentId = `did:erc8004:aquarius:${communityShort}:${slugify(input.name)}-${randomUUID()}`;
+    const communityShort = boundInput.communityAddress.slice(2, 10).toLowerCase();
+    const agentId = `did:erc8004:aquarius:${communityShort}:${slugify(boundInput.name)}-${randomUUID()}`;
     const cardUrl = `${publicApiBaseUrl()}/api/agents/${encodeURIComponent(agentId)}/card`;
     const metadataUri = cardUrl;
-    const promptHash = hashValue(input.promptTemplate);
+    const promptHash = hashValue(boundInput.promptTemplate);
 
     const agentCard: AgentCard = {
       schemaVersion: 'aquarius.agent-card.v1',
       standard: 'ERC-8004',
       agentId,
-      name: input.name,
-      description: input.description,
-      role: input.role,
-      capabilities: input.capabilities,
-      communityAddress: input.communityAddress as `0x${string}`,
-      communityName: input.communityName ?? null,
+      name: boundInput.name,
+      description: boundInput.description,
+      role: boundInput.role,
+      capabilities: boundInput.capabilities,
+      communityAddress: boundInput.communityAddress as `0x${string}`,
+      communityName: boundInput.communityName ?? null,
       paymentAddress: account.address,
       wallet: {
         type: 'EOA',
         chain: process.env.AQUARIUS_CHAIN_NAME ?? 'local-or-base',
       },
       runtime: {
-        provider: input.runtime.provider,
-        model: input.runtime.model,
+        provider: boundInput.runtime.provider,
+        model: boundInput.runtime.model,
         status: 'pending-orchestrator',
       },
       endpoints: {
@@ -355,14 +417,14 @@ agentRoutes.post('/create', async (c) => {
     };
 
     const encryptedPrivateKey = encryptPrivateKey(privateKey);
-    const registration = await registerAgentOnChain(input, account.address, agentId, metadataUri);
-    const initialFunding = await fundAgentWallet(input, account.address);
+    const registration = await registerAgentOnChain(boundInput, account.address, agentId, metadataUri);
+    const initialFunding = await fundAgentWallet(boundInput, account.address);
 
     const storedAgent: StoredAgent = {
       agentId,
-      communityAddress: input.communityAddress as `0x${string}`,
-      communityName: input.communityName ?? null,
-      creatorAddress: (input.creatorAddress as `0x${string}` | undefined) ?? null,
+      communityAddress: boundInput.communityAddress as `0x${string}`,
+      communityName: boundInput.communityName ?? null,
+      creatorAddress,
       walletAddress: account.address,
       agentCard,
       metadataUri,
@@ -371,7 +433,7 @@ agentRoutes.post('/create', async (c) => {
       registration,
       initialFunding,
       promptHash,
-      promptTemplate: input.promptTemplate,
+      promptTemplate: boundInput.promptTemplate,
       createdAt,
     };
 
@@ -398,12 +460,31 @@ agentRoutes.post('/create', async (c) => {
 
 /**
  * GET /api/agents
- * List created agents. Optional: ?communityAddress=0x...
+ * List agents created by the authenticated wallet.
+ * Optional: ?communityAddress=0x... further filters the caller's creations.
  */
 agentRoutes.get('/', (c) => {
+  const session = getSessionFromAuthorization(c.req.header('authorization'));
+
+  if (!session) {
+    return c.json({
+      error: 'Wallet session required',
+      message: 'Sign in to list agents you created.',
+    }, 401);
+  }
+
   const communityAddress = c.req.query('communityAddress');
+  if (communityAddress && !isAddress(communityAddress)) {
+    return c.json({ error: 'Invalid communityAddress' }, 400);
+  }
+
   const list = [...agents.values()]
-    .filter((agent) => !communityAddress || agent.communityAddress.toLowerCase() === communityAddress.toLowerCase())
+    .filter((agent) => agent.creatorAddress.toLowerCase() === session.address.toLowerCase())
+    .filter(
+      (agent) =>
+        !communityAddress ||
+        agent.communityAddress.toLowerCase() === communityAddress.toLowerCase()
+    )
     .map(safeAgent);
 
   return c.json({

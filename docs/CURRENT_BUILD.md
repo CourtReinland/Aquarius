@@ -32,7 +32,7 @@ No centralized username/password server is required for the root identity model.
 | Institutions | Create institutions, allocate shares, create/offer/accept/vacate positions | On-chain |
 | Dividends | Proportional token dividend distribution for institution shareholders | On-chain |
 | Alliances | Propose, accept, decline, dissolve inter-community alliances | On-chain |
-| Legal docs | Generate charters/bylaws with Anthropic Claude from community parameters | API |
+| Legal docs | Generate charters/bylaws with Grok (xAI) from community parameters; Anthropic optional fallback | API |
 | Explorer UI | 3D/2D community explorer and membership dashboard | Mobile app + chain reads |
 | Android deployment | Release APK builds and installs on a connected Pixel 3a | Native Android project |
 
@@ -121,7 +121,8 @@ Web preview cannot use SecureStore and falls back to AsyncStorage for the key â€
 
 ### Current Limitations
 
-- Session storage is in-memory in the API process.
+- Session storage is in-memory in the API process (not durable across restarts or replicas).
+- Rate limits are per-process, not shared across multiple API instances.
 - Production wallet connectors are planned: WalletConnect v2, Coinbase Wallet, hardware wallets.
 - Smart-contract wallet auth needs ERC-1271 support.
 - Smart-account onboarding should use ERC-4337 in production.
@@ -141,7 +142,11 @@ Aquarius agents are intended to be first-class community members. The current bu
 - Private prompt/runtime config stored by the API process.
 - Optional encrypted private key storage if `AGENT_KEY_ENCRYPTION_SECRET` is set.
 - Optional on-chain registration through `Community.registerAIAgent` if operator env vars are set.
-- Agent creation attribution is protected: if `creatorAddress` is provided, the API requires a matching signed wallet session.
+- Agent creation always requires a signed wallet session; creator attribution is bound to that session.
+- Operator funding / on-chain registration are gated by `AGENT_OPERATOR_ACTIONS_ENABLED` (and optional allowlist) with an `AGENT_MAX_INITIAL_FUNDING_ETH` cap.
+- `GET /api/agents` is auth-scoped to the caller's creations; public cards stay at `GET /api/agents/:id/card`.
+- Auth challenge/verify are rate-limited; CORS is origin-allowlisted; API responses include basic security headers.
+- Paid AI routes (legal generate/summarize, Blue chat) require a wallet session and are rate-limited per IP + address.
 
 ### Planned Next
 
@@ -198,7 +203,8 @@ The API is a Hono server in `packages/api`.
 | `/health` | Built | Health check |
 | `/api/auth/*` | Built | Wallet challenge, verify, session, logout |
 | `/api/agents/*` | Built | Agent create/list/card |
-| `/api/legal/*` | Built | Legal generation, template listing, summarization |
+| `/api/legal/*` | Built | Legal generation/summarization (**session required**); templates public |
+| `/api/blue/*` | Built | Blue chat (**session required**); status returns `{ available }` only |
 | `/api/communities/*` | Placeholder | Community CRUD facade, future contract-backed API |
 
 ### Important Environment Variables
@@ -206,9 +212,17 @@ The API is a Hono server in `packages/api`.
 | Variable | Purpose |
 |---|---|
 | `PORT` | API port, defaults to `3001` |
-| `ANTHROPIC_API_KEY` | Enables legal document generation |
-| `AQUARIUS_AUTH_SECRET` | Stable HMAC secret for API session tokens |
+| `XAI_API_KEY` | Primary AI provider (Grok) for legal generate/summarize and Blue chat |
+| `ANTHROPIC_API_KEY` | Optional Anthropic fallback when Grok is unset or a Grok call fails |
+| `LEGAL_GROK_MODEL` / `AQUARIUS_GROK_MODEL` | Legal long-form Grok model (default `grok-4`) |
+| `BLUE_GROK_MODEL` | Blue chat Grok model (default `grok-4-fast-non-reasoning`) |
+| `AQUARIUS_AUTH_SECRET` | HMAC secret for API session tokens (**required in production**) |
+| `AQUARIUS_ENV` / `NODE_ENV` | Set to `production` to enforce auth-secret boot checks |
+| `AQUARIUS_CORS_ORIGINS` | Comma-separated CORS allowlist (dev defaults to localhost Expo/web) |
 | `AGENT_KEY_ENCRYPTION_SECRET` | Encrypts generated agent private keys before storage |
+| `AGENT_OPERATOR_ACTIONS_ENABLED` | Opt-in for operator funding / on-chain registration (`true` to enable) |
+| `AGENT_OPERATOR_ALLOWLIST` | Optional wallets allowed to request operator-funded actions |
+| `AGENT_MAX_INITIAL_FUNDING_ETH` | Cap for agent `initialFundingEth` (default `0.01`) |
 | `AQUARIUS_OPERATOR_PRIVATE_KEY` | Operator wallet for agent registration/funding |
 | `AQUARIUS_RPC_URL` or `RPC_URL` | RPC URL for API-side transactions |
 | `AQUARIUS_PUBLIC_API_BASE_URL` | Public base URL used in generated agent cards |
@@ -216,9 +230,13 @@ The API is a Hono server in `packages/api`.
 | `EXPO_PUBLIC_AQUARIUS_API_BASE_URL` | Mobile bundle API target override |
 | `EXPO_PUBLIC_AQUARIUS_DEV_SIGNER` | Set to `1` to allow opt-in Anvil shared-key signing in the mobile UI |
 
-## Legal Generation
+## Legal Generation & Blue AI
 
-The API can generate legal charters/bylaws using Anthropic Claude from community wizard parameters.
+Paid AI features use **Grok (xAI) as the primary provider** when `XAI_API_KEY` is set. Anthropic Claude is an optional fallback. Legal generation defaults to `grok-4` for long-form charters; Blue uses a faster Grok model for short replies.
+
+**Session required:** `POST /api/legal/generate`, `POST /api/legal/summarize`, and `POST /api/blue/chat` all require a valid Aquarius wallet session (`Authorization: Bearer â€¦`). `GET /api/legal/templates` stays public. `GET /api/blue/status` only returns `{ available: boolean }` (does not advertise which provider keys are set).
+
+These paid AI routes are also rate-limited in-process per IP + session address (stricter for legal generate than Blue chat).
 
 Templates:
 
