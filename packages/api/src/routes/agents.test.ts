@@ -48,8 +48,8 @@ async function signIn(app: ReturnType<typeof createTestApp>, privateKey: `0x${st
   };
 }
 
-beforeEach(() => {
-  __resetAuthStateForTests();
+beforeEach(async () => {
+  await __resetAuthStateForTests();
 });
 
 describe('agent permission class mapping', () => {

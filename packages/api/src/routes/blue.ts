@@ -94,7 +94,7 @@ function blueAvailable(): boolean {
 
 blueRoutes.post('/chat', async (c) => {
   try {
-    const session = getSessionFromAuthorization(c.req.header('authorization'));
+    const session = await getSessionFromAuthorization(c.req.header('authorization'));
     if (!session) {
       return c.json(
         {

@@ -101,3 +101,26 @@ export const agentContractWatchers = pgTable('agent_contract_watchers', {
   lastBlockNumber: integer('last_block_number'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
 });
+
+/** SIWE-style one-time login challenges. Durable when DATABASE_URL is set. */
+export const authChallenges = pgTable('auth_challenges', {
+  nonce: text('nonce').primaryKey(),
+  address: varchar('address', { length: 42 }).notNull(),
+  chainId: integer('chain_id').notNull(),
+  message: text('message').notNull(),
+  issuedAt: timestamp('issued_at', { withTimezone: true }).notNull(),
+  expirationTime: timestamp('expiration_time', { withTimezone: true }).notNull(),
+});
+
+/**
+ * HMAC session revocation/lookup rows. The bearer token itself is not stored;
+ * `token_hash` is SHA-256 of the token so logout/verify can find the row.
+ */
+export const authSessions = pgTable('auth_sessions', {
+  sessionId: text('session_id').primaryKey(),
+  tokenHash: text('token_hash').notNull().unique(),
+  address: varchar('address', { length: 42 }).notNull(),
+  chainId: integer('chain_id').notNull(),
+  issuedAt: timestamp('issued_at', { withTimezone: true }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});

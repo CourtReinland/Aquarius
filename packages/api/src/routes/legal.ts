@@ -56,11 +56,11 @@ type SessionGate =
   | { ok: true; session: SessionRecord }
   | { ok: false; response: Response };
 
-function requireSession(c: {
+async function requireSession(c: {
   req: { header: (name: string) => string | undefined };
   json: (body: unknown, status?: number) => Response;
-}): SessionGate {
-  const session = getSessionFromAuthorization(c.req.header('authorization'));
+}): Promise<SessionGate> {
+  const session = await getSessionFromAuthorization(c.req.header('authorization'));
   if (!session) {
     return {
       ok: false,
@@ -85,7 +85,7 @@ function requireSession(c: {
  */
 legalRoutes.post('/generate', async (c) => {
   try {
-    const auth = requireSession(c);
+    const auth = await requireSession(c);
     if (!auth.ok) return auth.response;
 
     const ip = clientIp(c);
@@ -171,7 +171,7 @@ legalRoutes.post('/generate', async (c) => {
  */
 legalRoutes.post('/summarize', async (c) => {
   try {
-    const auth = requireSession(c);
+    const auth = await requireSession(c);
     if (!auth.ok) return auth.response;
 
     const ip = clientIp(c);
