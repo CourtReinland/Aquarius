@@ -10,10 +10,17 @@ import {
   __resetRateLimitersForTests,
 } from '../lib/rate-limit.js';
 import { clientIp } from '../lib/request.js';
+import {
+  getAuthStore,
+  __resetAuthStoreForTests,
+  __setAuthStoreForTests,
+  type ChallengeRecord,
+  type SessionRecord,
+} from '../db/auth-store.js';
 
 export const authRoutes = new Hono();
-
-const MAX_CHALLENGES = 2_000;
+export type { ChallengeRecord, SessionRecord };
+export { __setAuthStoreForTests };
 
 const challengeSchema = z.object({
   address: z.string().refine(isAddress, 'address must be an EVM address'),
@@ -31,25 +38,6 @@ const verifySchema = z.object({
   signature: z.string().regex(/^0x[0-9a-fA-F]+$/, 'signature must be hex'),
 });
 
-interface ChallengeRecord {
-  address: `0x${string}`;
-  chainId: number;
-  nonce: string;
-  message: string;
-  issuedAt: string;
-  expirationTime: string;
-}
-
-export interface SessionRecord {
-  sessionId: string;
-  address: `0x${string}`;
-  chainId: number;
-  issuedAt: string;
-  expiresAt: string;
-}
-
-const challenges = new Map<string, ChallengeRecord>();
-const sessions = new Map<string, SessionRecord>();
 const processSessionSecret = randomBytes(32).toString('hex');
 
 function authSecret() {
@@ -69,7 +57,7 @@ function createSessionToken(session: SessionRecord) {
   return `${payload}.${signPayload(payload)}`;
 }
 
-function verifySessionToken(token: string) {
+function parseAndAuthenticateToken(token: string): SessionRecord | null {
   const [payload, signature] = token.split('.');
   if (!payload || !signature) return null;
 
@@ -87,12 +75,19 @@ function verifySessionToken(token: string) {
   try {
     const session = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as SessionRecord;
     if (Date.parse(session.expiresAt) <= Date.now()) return null;
-    const stored = sessions.get(token);
-    if (!stored || stored.sessionId !== session.sessionId) return null;
     return session;
   } catch {
     return null;
   }
+}
+
+async function verifySessionToken(token: string) {
+  const session = parseAndAuthenticateToken(token);
+  if (!session) return null;
+
+  const stored = await getAuthStore().getSession(token);
+  if (!stored || stored.sessionId !== session.sessionId) return null;
+  return session;
 }
 
 function buildSiweMessage(input: z.infer<typeof challengeSchema>, nonce: string, issuedAt: string, expirationTime: string) {
@@ -148,37 +143,29 @@ function bearerToken(header: string | undefined) {
   return match?.[1] ?? null;
 }
 
-export function getSessionFromAuthorization(header: string | undefined) {
+export async function getSessionFromAuthorization(header: string | undefined) {
   const token = bearerToken(header);
   return token ? verifySessionToken(token) : null;
 }
 
-export function purgeExpiredChallenges(now = Date.now()) {
-  for (const [nonce, record] of challenges) {
-    if (Date.parse(record.expirationTime) <= now) {
-      challenges.delete(nonce);
-    }
-  }
+export async function purgeExpiredChallenges(now = Date.now()) {
+  await getAuthStore().purgeExpired(now);
 }
 
-function storeChallenge(nonce: string, record: ChallengeRecord) {
-  purgeExpiredChallenges();
-
-  if (challenges.size >= MAX_CHALLENGES) {
-    const oldest = [...challenges.entries()].sort(
-      (a, b) => Date.parse(a[1].issuedAt) - Date.parse(b[1].issuedAt)
-    )[0];
-    if (oldest) challenges.delete(oldest[0]);
-  }
-
-  challenges.set(nonce, record);
-}
-
-/** Test helper — clears in-memory auth state. */
-export function __resetAuthStateForTests() {
-  challenges.clear();
-  sessions.clear();
+/** Test helper — clears auth state (memory store by default). */
+export async function __resetAuthStateForTests() {
+  await __resetAuthStoreForTests();
   __resetRateLimitersForTests();
+}
+
+/**
+ * Test helper — issue a signed session with a custom expiry so tests can
+ * prove expired tokens are rejected without waiting 12 hours.
+ */
+export async function __issueSessionForTests(session: SessionRecord): Promise<string> {
+  const token = createSessionToken(session);
+  await getAuthStore().putSession(token, session);
+  return token;
 }
 
 /**
@@ -223,7 +210,7 @@ authRoutes.post('/challenge', async (c) => {
       expirationTime,
     };
 
-    storeChallenge(nonce, record);
+    await getAuthStore().putChallenge(record);
 
     return c.json({
       success: true,
@@ -279,7 +266,8 @@ authRoutes.post('/verify', async (c) => {
       );
     }
 
-    const challenge = challenges.get(parsed.nonce);
+    const store = getAuthStore();
+    const challenge = await store.getChallenge(parsed.nonce);
     if (!challenge) {
       return c.json({ error: 'Challenge not found or already used' }, 401);
     }
@@ -293,7 +281,7 @@ authRoutes.post('/verify', async (c) => {
     }
 
     if (Date.parse(challenge.expirationTime) <= Date.now()) {
-      challenges.delete(parsed.nonce);
+      await store.deleteChallenge(parsed.nonce);
       return c.json({ error: 'Challenge expired' }, 401);
     }
 
@@ -307,7 +295,10 @@ authRoutes.post('/verify', async (c) => {
       return c.json({ error: 'Invalid signature' }, 401);
     }
 
-    challenges.delete(parsed.nonce);
+    const consumed = await store.consumeChallenge(parsed.nonce);
+    if (!consumed) {
+      return c.json({ error: 'Challenge not found or already used' }, 401);
+    }
 
     const session: SessionRecord = {
       sessionId: randomUUID(),
@@ -318,7 +309,7 @@ authRoutes.post('/verify', async (c) => {
     };
 
     const token = createSessionToken(session);
-    sessions.set(token, session);
+    await store.putSession(token, session);
 
     return c.json({
       success: true,
@@ -339,8 +330,8 @@ authRoutes.post('/verify', async (c) => {
  * GET /api/auth/session
  * Checks whether a bearer token still represents a valid wallet session.
  */
-authRoutes.get('/session', (c) => {
-  const session = getSessionFromAuthorization(c.req.header('authorization'));
+authRoutes.get('/session', async (c) => {
+  const session = await getSessionFromAuthorization(c.req.header('authorization'));
 
   if (!session) {
     return c.json({ authenticated: false }, 401);
@@ -356,8 +347,8 @@ authRoutes.get('/session', (c) => {
  * POST /api/auth/logout
  * Revokes a convenience API session. Wallet ownership remains the real identity.
  */
-authRoutes.post('/logout', (c) => {
+authRoutes.post('/logout', async (c) => {
   const token = bearerToken(c.req.header('authorization'));
-  if (token) sessions.delete(token);
+  if (token) await getAuthStore().deleteSession(token);
   return c.json({ success: true });
 });

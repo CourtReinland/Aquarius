@@ -70,7 +70,7 @@ The challenge route accepts:
 | `statement` | Sign-in statement shown inside the message |
 | `resources` | Resource hints, currently defaults to `aquarius://identity` |
 
-The API stores challenges in memory by nonce. Verification fails if the challenge is missing, expired, reused, mismatched, or signed by the wrong address.
+The API stores challenges by nonce. When `DATABASE_URL` is set, challenges live in Postgres (`auth_challenges`) so they survive process restarts; otherwise they stay in memory. Verification fails if the challenge is missing, expired, reused, mismatched, or signed by the wrong address.
 
 ## Session Token
 
@@ -80,7 +80,7 @@ The current session token is an HMAC-signed payload:
 - Signature uses `AQUARIUS_AUTH_SECRET` when set.
 - If `AQUARIUS_AUTH_SECRET` is not set in non-production, the API uses a process-local random secret, so sessions are invalidated when the API restarts.
 - Production deployments must set `AQUARIUS_AUTH_SECRET`; the process exits on boot without it.
-- The server also keeps a session map in memory so logout can revoke a token before expiration.
+- The server also keeps a session revocation/lookup row (Postgres `auth_sessions` when `DATABASE_URL` is set, otherwise an in-memory map) so logout can revoke a token before expiration, including across process restarts when the database is configured.
 
 This token does not grant blockchain authority. It only lets the API know, for a short window, that the caller recently proved control of a wallet.
 
@@ -119,13 +119,14 @@ The API binds `creatorAddress` to the session wallet. If the body includes a dif
 ### Auth abuse controls
 
 - `POST /api/auth/challenge` and `POST /api/auth/verify` are rate-limited in-process by IP and address (HTTP 429 + `Retry-After`).
-- Expired challenges are purged; the challenge map is size-bounded.
+- Expired challenges are purged; the challenge map is size-bounded (in-memory and Postgres).
 - In production (`NODE_ENV=production` or `AQUARIUS_ENV=production`), the API refuses to start (and will not issue sessions) without `AQUARIUS_AUTH_SECRET`.
 
 | Variable | Purpose |
 |---|---|
 | `AQUARIUS_AUTH_SECRET` | Required in production; HMAC secret for session tokens |
 | `AQUARIUS_CORS_ORIGINS` | Comma-separated browser origin allowlist |
+| `DATABASE_URL` | Postgres for durable challenges/sessions; unset keeps the in-memory fallback |
 
 ## API
 

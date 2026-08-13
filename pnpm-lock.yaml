@@ -155,7 +155,7 @@ importers:
         version: 1.19.14(hono@4.12.25)
       drizzle-orm:
         specifier: ^0.36.0
-        version: 0.36.4(@types/react@19.1.17)(postgres@3.4.9)(react@19.1.0)
+        version: 0.36.4(@electric-sql/pglite@0.2.17)(@types/react@19.1.17)(postgres@3.4.9)(react@19.1.0)
       hono:
         specifier: ^4.12.21
         version: 4.12.25
@@ -169,6 +169,9 @@ importers:
         specifier: ^3.23.0
         version: 3.25.76
     devDependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.2.17
+        version: 0.2.17
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.17
@@ -720,6 +723,9 @@ packages:
 
   '@drizzle-team/brocli@0.10.2':
     resolution: {integrity: sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w==}
+
+  '@electric-sql/pglite@0.2.17':
+    resolution: {integrity: sha512-qEpKRT2oUaWDH6tjRxLHjdzMqRUGYDnGZlKrnL4dJ77JVMcP2Hpo3NYnOSPKdZdeec57B6QPprCUFg0picx5Pw==}
 
   '@esbuild-kit/core-utils@3.3.2':
     resolution: {integrity: sha512-sPRAnw9CdSsRmEtnsl2WXWdyquogVpB3yZ3dgwJfe8zrOzTsV7cJvmwrKVa+0ma5BoiGJ+BoqkMvawbayKUsqQ==}
@@ -2385,6 +2391,7 @@ packages:
   '@xmldom/xmldom@0.8.13':
     resolution: {integrity: sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw==}
     engines: {node: '>=10.0.0'}
+    deprecated: this version has critical issues, please update to the latest version
 
   abitype@1.2.3:
     resolution: {integrity: sha512-Ofer5QUnuUdTFsBRwARMoWKOH1ND5ehwYhJ3OJ/BQO+StkwQjHw0XyVh4vDttzHB7QOFhPHa/o413PJ82gU/Tg==}
@@ -6178,6 +6185,8 @@ snapshots:
 
   '@drizzle-team/brocli@0.10.2': {}
 
+  '@electric-sql/pglite@0.2.17': {}
+
   '@esbuild-kit/core-utils@3.3.2':
     dependencies:
       esbuild: 0.18.20
@@ -8645,8 +8654,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  drizzle-orm@0.36.4(@types/react@19.1.17)(postgres@3.4.9)(react@19.1.0):
+  drizzle-orm@0.36.4(@electric-sql/pglite@0.2.17)(@types/react@19.1.17)(postgres@3.4.9)(react@19.1.0):
     optionalDependencies:
+      '@electric-sql/pglite': 0.2.17
       '@types/react': 19.1.17
       postgres: 3.4.9
       react: 19.1.0

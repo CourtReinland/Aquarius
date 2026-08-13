@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { createApp } from '../src/app.js';
-import { __resetAuthStateForTests } from '../src/routes/auth.js';
+import { __issueSessionForTests, __resetAuthStateForTests } from '../src/routes/auth.js';
 import { __resetAgentsForTests } from '../src/routes/agents.js';
 import {
   __resetRateLimitersForTests,
@@ -71,8 +71,8 @@ const agentPayload = {
 };
 
 describe('API security hardening', () => {
-  beforeEach(() => {
-    __resetAuthStateForTests();
+  beforeEach(async () => {
+    await __resetAuthStateForTests();
     __resetAgentsForTests();
     __resetRateLimitersForTests();
     delete process.env.AGENT_OPERATOR_ACTIONS_ENABLED;
@@ -366,5 +366,89 @@ describe('API security hardening', () => {
     }
 
     expect(lastStatus).toBe(429);
+  });
+
+  it('rejects a reused auth challenge', async () => {
+    const app = createApp();
+    const privateKey = generatePrivateKey();
+    const account = privateKeyToAccount(privateKey);
+
+    const challengeRes = await app.request('/api/auth/challenge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.20' },
+      body: JSON.stringify({ address: account.address, chainId: 31337 }),
+    });
+    expect(challengeRes.status).toBe(200);
+    const challengeBody = await challengeRes.json();
+    const message = challengeBody.challenge.message as string;
+    const signature = await account.signMessage({ message });
+
+    const first = await app.request('/api/auth/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.20' },
+      body: JSON.stringify({ message, signature }),
+    });
+    expect(first.status).toBe(200);
+
+    const second = await app.request('/api/auth/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.20' },
+      body: JSON.stringify({ message, signature }),
+    });
+    expect(second.status).toBe(401);
+    const secondBody = await second.json();
+    expect(secondBody.error).toBe('Challenge not found or already used');
+  });
+
+  it('revokes the bearer token on logout', async () => {
+    const app = createApp();
+    const { token } = await signIn(app, generatePrivateKey());
+
+    const before = await app.request('/api/auth/session', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(before.status).toBe(200);
+
+    const logout = await app.request('/api/auth/logout', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(logout.status).toBe(200);
+
+    const after = await app.request('/api/auth/session', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(after.status).toBe(401);
+    const afterBody = await after.json();
+    expect(afterBody.authenticated).toBe(false);
+
+    const createRes = await app.request('/api/agents/create', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(agentPayload),
+    });
+    expect(createRes.status).toBe(401);
+  });
+
+  it('rejects an expired session token', async () => {
+    const app = createApp();
+    const account = privateKeyToAccount(generatePrivateKey());
+    const token = await __issueSessionForTests({
+      sessionId: 'expired-session',
+      address: account.address,
+      chainId: 31337,
+      issuedAt: new Date(Date.now() - 13 * 60 * 60 * 1000).toISOString(),
+      expiresAt: new Date(Date.now() - 1000).toISOString(),
+    });
+
+    const res = await app.request('/api/auth/session', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.authenticated).toBe(false);
   });
 });

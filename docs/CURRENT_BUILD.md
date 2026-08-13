@@ -121,7 +121,7 @@ Web preview cannot use SecureStore and falls back to AsyncStorage for the key â€
 
 ### Current Limitations
 
-- Session storage is in-memory in the API process (not durable across restarts or replicas).
+- Session and challenge storage is durable in Postgres when `DATABASE_URL` is set; otherwise it stays in-memory in the API process (not durable across restarts or replicas).
 - Rate limits are per-process, not shared across multiple API instances.
 - Production wallet connectors are planned: WalletConnect v2, Coinbase Wallet, hardware wallets.
 - Smart-contract wallet auth needs ERC-1271 support.
@@ -227,6 +227,7 @@ The API is a Hono server in `packages/api`.
 | `AQUARIUS_RPC_URL` or `RPC_URL` | RPC URL for API-side transactions |
 | `AQUARIUS_PUBLIC_API_BASE_URL` | Public base URL used in generated agent cards |
 | `AGENT_RUNTIME_BASE_URL` | Future A2A/MCP runtime base URL |
+| `DATABASE_URL` | Postgres URL for durable auth sessions/challenges (and Agent Foundry schema). Unset = in-memory auth fallback |
 | `EXPO_PUBLIC_AQUARIUS_API_BASE_URL` | Mobile bundle API target override |
 | `EXPO_PUBLIC_AQUARIUS_DEV_SIGNER` | Set to `1` to allow opt-in Anvil shared-key signing in the mobile UI |
 
@@ -314,7 +315,7 @@ The Android release APK was built and installed on a physical Pixel 3a.
 
 - Web app is still prototype-only; mobile is the active client.
 - Desktop app is a placeholder.
-- API persistence is in-memory for auth sessions and agents.
+- API persistence: auth sessions/challenges are durable in Postgres when `DATABASE_URL` is set; agents still use the JSON bridge store (Drizzle schema is ready).
 - Contract state reads are direct and local-chain oriented; production should add an indexer.
 - Agent runtime is not autonomous yet.
 - External WalletConnect v2 / Coinbase Wallet / hardware connectors are planned but not fully integrated into the app flow.

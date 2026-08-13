@@ -1004,7 +1004,7 @@ agentRoutes.post('/create', async (c) => {
   try {
     const body = await c.req.json();
     const input = createAgentSchema.parse(body);
-    const creatorSession = getSessionFromAuthorization(c.req.header('authorization'));
+    const creatorSession = await getSessionFromAuthorization(c.req.header('authorization'));
 
     if (!creatorSession) {
       return c.json({
@@ -1164,8 +1164,8 @@ agentRoutes.post('/create', async (c) => {
  * List agents created by the authenticated wallet.
  * Optional: ?communityAddress=0x... further filters the caller's creations.
  */
-agentRoutes.get('/', (c) => {
-  const session = getSessionFromAuthorization(c.req.header('authorization'));
+agentRoutes.get('/', async (c) => {
+  const session = await getSessionFromAuthorization(c.req.header('authorization'));
 
   if (!session) {
     return c.json({
