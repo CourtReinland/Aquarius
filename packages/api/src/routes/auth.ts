@@ -1,8 +1,12 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { getAddress, isAddress, verifyMessage } from 'viem';
+import { getAddress, isAddress } from 'viem';
 import { hasAuthSecretConfigured, isProductionEnv } from '../lib/env.js';
+import {
+  verifyWalletSignature,
+  __resetSignaturePublicClientForTests,
+} from '../lib/siwe-signature.js';
 import {
   authAddressLimiter,
   authIpLimiter,
@@ -156,6 +160,7 @@ export async function purgeExpiredChallenges(now = Date.now()) {
 export async function __resetAuthStateForTests() {
   await __resetAuthStoreForTests();
   __resetRateLimitersForTests();
+  __resetSignaturePublicClientForTests();
 }
 
 /**
@@ -285,14 +290,20 @@ authRoutes.post('/verify', async (c) => {
       return c.json({ error: 'Challenge expired' }, 401);
     }
 
-    const valid = await verifyMessage({
+    const verified = await verifyWalletSignature({
       address: parsed.address,
       message: input.message,
       signature: input.signature as `0x${string}`,
     });
 
-    if (!valid) {
-      return c.json({ error: 'Invalid signature' }, 401);
+    if (!verified.ok) {
+      return c.json(
+        {
+          error: verified.error,
+          ...(verified.message ? { message: verified.message } : {}),
+        },
+        verified.status
+      );
     }
 
     const consumed = await store.consumeChallenge(parsed.nonce);
