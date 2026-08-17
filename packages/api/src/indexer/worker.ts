@@ -51,7 +51,7 @@ export function getIndexerPublicClient(): IndexerPublicClient | null {
 
   const rpcUrl = resolveIndexerRpcUrl();
   if (!rpcUrl) return null;
-  return createPublicClient({ transport: http(rpcUrl) });
+  return createPublicClient({ transport: http(rpcUrl) }) as IndexerPublicClient;
 }
 
 export function eventId(transactionHash: string, logIndex: number): string {
