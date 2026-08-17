@@ -7,6 +7,7 @@ import { legalRoutes } from './routes/legal.js';
 import { agentRoutes } from './routes/agents.js';
 import { authRoutes } from './routes/auth.js';
 import { blueRoutes } from './routes/blue.js';
+import { indexerRoutes } from './routes/indexer.js';
 import { resolveCorsOrigins } from './lib/env.js';
 
 export function createApp() {
@@ -51,6 +52,8 @@ export function createApp() {
       createAgent: '/api/agents/create',
       authChallenge: '/api/auth/challenge',
       blue: '/api/blue',
+      indexerHealth: '/api/indexer/health',
+      indexerCommunities: '/api/indexer/communities',
     },
   }));
 
@@ -60,6 +63,7 @@ export function createApp() {
   app.route('/api/agents', agentRoutes);
   app.route('/api/auth', authRoutes);
   app.route('/api/blue', blueRoutes);
+  app.route('/api/indexer', indexerRoutes);
 
   return app;
 }
