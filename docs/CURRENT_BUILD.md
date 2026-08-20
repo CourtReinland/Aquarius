@@ -20,7 +20,7 @@ No centralized username/password server is required for the root identity model.
 
 | Area | Built Today | Source of Truth |
 |---|---|---|
-| Wallet login | Local wallet connect plus SIWE-style challenge/sign/verify flow | Wallet signature |
+| Wallet login | Local wallet or WalletConnect v2 plus SIWE-style challenge/sign/verify flow | Wallet signature |
 | Local identity | Aquarius Passport stores linked wallets and short-lived sessions locally | Device storage |
 | Community founding | Deploy community contracts through `CommunityFactory` | On-chain |
 | Community bylaws | Admission, exile, voting, proposal permissions, corporate/agent member support | On-chain |
@@ -72,10 +72,10 @@ The mobile app is the most complete client implementation. It runs as a React Na
 
 ### Mobile Data Flow
 
-- `BlockchainContext` hydrates the signing key from SecureStore, then calls `useBlockchainData` for wallet-scoped chain reads.
+- `BlockchainContext` hydrates a WalletConnect session when present, otherwise the signing key from SecureStore, then calls `useBlockchainData` for wallet-scoped chain reads.
 - `useWalletStore` persists Passport metadata (session + linked wallets) in AsyncStorage — never the private key.
-- `WalletConnect` creates/imports a personal local wallet (or opt-in Anvil account #0 when `EXPO_PUBLIC_AQUARIUS_DEV_SIGNER=1`), then signs in through the auth API.
-- `useWalletAuth` performs the SIWE-style challenge/verify flow with the same `getWalletClient()` used for txs.
+- `WalletConnect` creates/imports a personal local wallet, connects WalletConnect v2 when `EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID` is set (or opt-in Anvil account #0 when `EXPO_PUBLIC_AQUARIUS_DEV_SIGNER=1`), then signs in through the auth API.
+- `useWalletAuth` performs the SIWE-style challenge/verify flow with the same `getWalletClient()` used for txs (WC session when connected, otherwise the local key).
 - `useAgentCreator` creates agent cards/wallets through the API and sends the signed session when present.
 - Contract write hooks sign through `src/wallet/signer.ts` → `getWalletClient()` (no silent shared Anvil key).
 
@@ -85,7 +85,7 @@ Aquarius login is not a centralized account record. It is proof that the current
 
 ### Implemented Flow
 
-1. User creates or imports a local wallet.
+1. User creates or imports a local wallet, or connects an external wallet via WalletConnect v2.
 2. App asks the API for `POST /api/auth/challenge`.
 3. API returns a one-time SIWE-style message with nonce and expiration.
 4. Wallet signs the message locally.
@@ -96,7 +96,7 @@ Aquarius login is not a centralized account record. It is proof that the current
 
 ### Why This Matters
 
-- The private key never leaves the device.
+- The private key never leaves the device. With WalletConnect, it never enters the Aquarius process.
 - The API session is only a convenience token.
 - Membership, rights, shares, votes, and obligations still come from contracts.
 - One human can locally link multiple wallets without publicly revealing that relationship.
@@ -115,6 +115,7 @@ Aquarius login is not a centralized account record. It is proof that the current
 | Mode | Flag | Behavior |
 |---|---|---|
 | Secure (default) | unset | Generate/import personal key; persist in SecureStore; sign via `getWalletClient()` |
+| WalletConnect v2 | `EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID` | External wallet session; `getWalletClient()` prefers WC when connected. Button hidden if unset. |
 | Dev Anvil | `EXPO_PUBLIC_AQUARIUS_DEV_SIGNER=1` | Explicit UI button for Anvil account #0; labeled **DEV SIGNER ACTIVE** |
 
 Web preview cannot use SecureStore and falls back to AsyncStorage for the key — preview-only, not for real funds.
@@ -123,7 +124,7 @@ Web preview cannot use SecureStore and falls back to AsyncStorage for the key �
 
 - Session and challenge storage is durable in Postgres when `DATABASE_URL` is set; otherwise it stays in-memory in the API process (not durable across restarts or replicas).
 - Rate limits are per-process, not shared across multiple API instances.
-- Production wallet connectors are planned: WalletConnect v2, Coinbase Wallet, hardware wallets.
+- WalletConnect v2 is available on mobile when `EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID` is set (Android-first). Coinbase Wallet SDK and hardware wallets are still later.
 - Smart-contract wallet auth uses ERC-1271 when `AQUARIUS_RPC_URL` or `RPC_URL` is set; without RPC, only EOA `personal_sign` is verified.
 - Smart-account onboarding should use ERC-4337 in production.
 
@@ -231,6 +232,7 @@ The API is a Hono server in `packages/api`.
 | `DATABASE_URL` | Postgres URL for durable auth sessions/challenges, Agent Foundry schema, and indexer cursors/events. Unset = in-memory fallback |
 | `EXPO_PUBLIC_AQUARIUS_API_BASE_URL` | Mobile bundle API target override |
 | `EXPO_PUBLIC_AQUARIUS_DEV_SIGNER` | Set to `1` to allow opt-in Anvil shared-key signing in the mobile UI |
+| `EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID` | Reown / WalletConnect Cloud project ID. Unset hides the WalletConnect button |
 | `INDEXER_START_BLOCK` | First block for indexer catch-up when no cursor exists (default `0`) |
 | `AQUARIUS_COMMUNITY_FACTORY_ADDRESS` / `COMMUNITY_FACTORY_ADDRESS` | Factory watched for `CommunityDeployed` (dev defaults to local Anvil) |
 | `AQUARIUS_GOVERNANCE_ADDRESS` / `GOVERNANCE_MODULE_ADDRESS` | Governance module watched for proposal/vote events (dev defaults to local Anvil) |
@@ -323,8 +325,8 @@ The Android release APK was built and installed on a physical Pixel 3a.
 - API persistence: auth sessions/challenges are durable in Postgres when `DATABASE_URL` is set; agents still use the JSON bridge store (Drizzle schema is ready).
 - A stub on-chain event indexer exists at `GET /api/indexer/communities` and `GET /api/indexer/health` (catch-up + `watchContractEvent`, Postgres when `DATABASE_URL` is set). The mobile/web apps still read the chain directly; remaining work is wiring clients to this API.
 - Agent runtime is not autonomous yet.
-- External WalletConnect v2 / Coinbase Wallet / hardware connectors are planned but not fully integrated into the app flow.
-- ERC-1271 smart-wallet SIWE verification is supported when `AQUARIUS_RPC_URL` or `RPC_URL` is set; WalletConnect UI and undeployed/counterfactual accounts are still follow-ups.
+- WalletConnect v2 is wired into mobile `getWalletClient()` for SIWE and contract writes. Coinbase Wallet SDK, hardware wallets, and ERC-4337 onboarding are still later.
+- ERC-1271 smart-wallet SIWE verification is supported when `AQUARIUS_RPC_URL` or `RPC_URL` is set; undeployed/counterfactual accounts are still follow-ups.
 - ERC-4337 account abstraction is planned for production onboarding and agents.
 - IPFS pinning flow for generated legal documents is planned.
 - Community API CRUD route is still a placeholder facade.

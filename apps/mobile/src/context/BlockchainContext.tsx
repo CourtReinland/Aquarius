@@ -4,6 +4,7 @@ import { useWalletStore } from '../hooks/useWalletStore';
 import type { MyCommunity, DiscoveredCommunity, OnChainProposal, UserProfile } from '../hooks/useBlockchainData';
 import { defaultChain } from '../config/chains';
 import { hydrateSigningKey } from '../wallet/signer';
+import { hydrateWalletConnect } from '../wallet/walletconnect';
 
 interface BlockchainContextValue {
   profile: UserProfile | null;
@@ -36,6 +37,13 @@ export function BlockchainProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      const walletConnectAddress = await hydrateWalletConnect();
+      if (cancelled) return;
+      if (walletConnectAddress) {
+        connect(walletConnectAddress, defaultChain.id);
+        return;
+      }
+
       const account = await hydrateSigningKey();
       if (cancelled || !account) return;
       connect(account.address, defaultChain.id);

@@ -29,6 +29,9 @@ npx expo start --dev-client --port 8081
 # Optional: Anvil pre-funded shared-key signing (local only; labeled in UI)
 EXPO_PUBLIC_AQUARIUS_DEV_SIGNER=1 npx expo start --dev-client --port 8081
 
+# Optional: WalletConnect v2 (button hidden if unset)
+EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID=your_reown_project_id npx expo start --dev-client --port 8081
+
 # 4. Build and install on a connected Android device (USB debugging on)
 npx expo run:android
 
@@ -45,6 +48,7 @@ adb reverse tcp:3001 tcp:3001
 | Mode | How to enable | What signs txs / SIWE |
 |---|---|---|
 | **Secure (default)** | No flag | User-generated or imported personal key via `getWalletClient()` |
+| **WalletConnect v2** | `EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID` | External wallet session; `getWalletClient()` prefers WC when connected |
 | **Dev Anvil** | `EXPO_PUBLIC_AQUARIUS_DEV_SIGNER=1` | Opt-in "Use Anvil Account #0" button; UI shows **DEV SIGNER ACTIVE** |
 
 Rules:
@@ -54,12 +58,36 @@ Rules:
 - Private keys persist in `expo-secure-store` on native. Web preview falls back to AsyncStorage and is **insecure / preview-only**.
 - Passport metadata (session, linked wallets) stays in AsyncStorage; the raw key never goes there and is never logged.
 - SIWE challenge/verify uses the same WalletClient as transactions (address consistency).
+- WalletConnect is skipped (button hidden) when `EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID` is unset, so a missing ID never crashes the app.
 
 For local Anvil gas without the shared key, create a personal wallet and fund it from Anvil account #0 manually.
+
+### WalletConnect v2
+
+Create a project ID at [Reown Dashboard](https://dashboard.reown.com) and set `EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID`. The Home / wallet panel then shows **Connect WalletConnect** next to Create / Import.
+
+**Android (primary path)**
+
+1. Build a dev client or release APK (`npx expo run:android`) so the `aquarius://` return scheme is registered.
+2. Start Metro with the project ID exported (values are inlined at bundle time).
+3. Tap **Connect WalletConnect**. Approve the pairing URI in MetaMask, Rainbow, or another WC v2 wallet — either scan/paste the URI or tap **Open installed wallet**.
+4. Approve the SIWE `personal_sign` in that same wallet. The connected address is used for login and later contract writes.
+5. Disconnect from the same panel. Create / Import local wallet remains available.
+
+**iOS caveats**
+
+- Pairing via the displayed `wc:` URI still works (paste/scan in a wallet, including on another device).
+- Returning to Aquarius after approve/sign is less reliable without extra Universal Links / associated domains. `LSApplicationQueriesSchemes` lists a few wallet schemes, but bounce-back was not the focus of this slice.
+- Prefer a custom-scheme native build over Expo Go for return-to-app.
+
+**Local Anvil**
+
+Most external wallets cannot send transactions to a USB-forwarded Anvil (`31337`). Use Create / Import or the opt-in Anvil signer for local-chain writes. WalletConnect is for SIWE plus Base / Base Sepolia (or mainnet) writes when `defaultChain` points there.
 
 ## Current Features
 
 - Local wallet create/import with SecureStore-backed key material.
+- WalletConnect v2 external-wallet connector when `EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID` is set.
 - Explicit opt-in Anvil/dev signer for local gas testing.
 - SIWE-style wallet login against the Aquarius API (same wallet that signs txs).
 - Local Aquarius Passport with signed session and linked wallets.
@@ -90,7 +118,7 @@ apps/mobile/src/
 │   ├── explorer3d/     # 3D Community Explorer (React Three Fiber)
 │   └── WalletConnect.tsx
 ├── hooks/              # Blockchain reads/writes via viem
-├── wallet/             # SecureStore key storage + getWalletClient() signer
+├── wallet/             # SecureStore key storage + WalletConnect + getWalletClient() signer
 ├── config/             # Chain config, contract addresses, ABIs, env flags
 ├── context/            # BlockchainContext (provides clients, factory address)
 ├── types/              # TypeScript domain types

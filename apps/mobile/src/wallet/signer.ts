@@ -8,7 +8,7 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { defaultChain } from '../config/chains';
-import { isDevSignerEnabled } from '../config/env';
+import { isDevSignerEnabled, isWalletConnectConfigured } from '../config/env';
 import {
   clearPrivateKey,
   getKeyStorageBackend,
@@ -16,6 +16,11 @@ import {
   readPrivateKey,
   type KeyStorageBackend,
 } from './keyStorage';
+import {
+  getWalletConnectAddress,
+  getWalletConnectWalletClient,
+  isWalletConnectSessionActive,
+} from './walletconnect';
 
 /**
  * Well-known Anvil account #0. Only usable when EXPO_PUBLIC_AQUARIUS_DEV_SIGNER=1.
@@ -24,7 +29,7 @@ import {
 export const ANVIL_ACCOUNT_0_PRIVATE_KEY =
   '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80' as const;
 
-export type SignerMode = 'none' | 'local-key' | 'dev-anvil';
+export type SignerMode = 'none' | 'local-key' | 'dev-anvil' | 'walletconnect';
 
 type AquariusWalletClient = WalletClient & { account: Account };
 
@@ -51,6 +56,7 @@ export function isAnvilDevKey(privateKey: `0x${string}`): boolean {
 }
 
 export function getSignerMode(): SignerMode {
+  if (isWalletConnectSessionActive()) return 'walletconnect';
   if (!memoryPrivateKey) return 'none';
   if (isAnvilDevKey(memoryPrivateKey) && isDevSignerEnabled()) return 'dev-anvil';
   return 'local-key';
@@ -61,7 +67,7 @@ export function isDevAnvilSignerActive(): boolean {
 }
 
 export function getConnectedAddress(): Address | null {
-  return cachedAccount?.address ?? null;
+  return getWalletConnectAddress() ?? cachedAccount?.address ?? null;
 }
 
 /**
@@ -137,9 +143,12 @@ export async function getSigningAccount(): Promise<Account | null> {
 
 /**
  * Single signing abstraction for all contract writes and SIWE.
- * Returns a viem WalletClient bound to the connected local key.
+ * Prefers an active WalletConnect session; otherwise uses the local SecureStore key.
  */
 export async function getWalletClient(): Promise<AquariusWalletClient> {
+  const walletConnectClient = await getWalletConnectWalletClient();
+  if (walletConnectClient) return walletConnectClient;
+
   const account = await getSigningAccount();
   if (!account || !memoryPrivateKey) {
     throw new Error('No signing wallet connected');
@@ -167,11 +176,13 @@ export async function describeKeyStorage(): Promise<{
   mode: SignerMode;
   address: Address | null;
   devSignerEnabled: boolean;
+  walletConnectConfigured: boolean;
 }> {
   return {
     backend: await getKeyStorageBackend(),
     mode: getSignerMode(),
     address: getConnectedAddress(),
     devSignerEnabled: isDevSignerEnabled(),
+    walletConnectConfigured: isWalletConnectConfigured(),
   };
 }
