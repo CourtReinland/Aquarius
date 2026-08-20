@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { getAddress } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { createApp } from '../src/app.js';
 import { __issueSessionForTests, __resetAuthStateForTests } from '../src/routes/auth.js';
@@ -7,6 +8,10 @@ import {
   __resetRateLimitersForTests,
   legalGenerateAddressLimiter,
 } from '../src/lib/rate-limit.js';
+import {
+  ERC1271_MAGICVALUE,
+  __setSignaturePublicClientForTests,
+} from '../src/lib/siwe-signature.js';
 
 const communityAddress = '0x0000000000000000000000000000000000000001';
 
@@ -83,6 +88,8 @@ describe('API security hardening', () => {
     delete process.env.AQUARIUS_ENV;
     delete process.env.ANTHROPIC_API_KEY;
     delete process.env.XAI_API_KEY;
+    delete process.env.AQUARIUS_RPC_URL;
+    delete process.env.RPC_URL;
   });
 
   it('rejects unauthenticated agent creation', async () => {
@@ -450,5 +457,134 @@ describe('API security hardening', () => {
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.authenticated).toBe(false);
+  });
+
+  it('accepts an ERC-1271 contract wallet that returns the magic value', async () => {
+    const app = createApp();
+    const contractAddress = getAddress('0x1111111111111111111111111111111111111111');
+    const contractSignature = `0x${'ab'.repeat(65)}` as `0x${string}`;
+
+    __setSignaturePublicClientForTests({
+      async getCode() {
+        return '0x6080604052';
+      },
+      async readContract() {
+        return ERC1271_MAGICVALUE;
+      },
+    });
+
+    const challengeRes = await app.request('/api/auth/challenge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.30' },
+      body: JSON.stringify({ address: contractAddress, chainId: 31337 }),
+    });
+    expect(challengeRes.status).toBe(200);
+    const challengeBody = await challengeRes.json();
+    const message = challengeBody.challenge.message as string;
+
+    const verifyRes = await app.request('/api/auth/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.30' },
+      body: JSON.stringify({ message, signature: contractSignature }),
+    });
+
+    expect(verifyRes.status).toBe(200);
+    const verifyBody = await verifyRes.json();
+    expect(verifyBody.success).toBe(true);
+    expect(verifyBody.session.address.toLowerCase()).toBe(contractAddress.toLowerCase());
+    expect(typeof verifyBody.session.token).toBe('string');
+  });
+
+  it('rejects an ERC-1271 contract wallet that returns a failure magic', async () => {
+    const app = createApp();
+    const contractAddress = getAddress('0x2222222222222222222222222222222222222222');
+    const contractSignature = `0x${'cd'.repeat(65)}` as `0x${string}`;
+
+    __setSignaturePublicClientForTests({
+      async getCode() {
+        return '0x6080604052';
+      },
+      async readContract() {
+        return '0xffffffff';
+      },
+    });
+
+    const challengeRes = await app.request('/api/auth/challenge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.31' },
+      body: JSON.stringify({ address: contractAddress, chainId: 31337 }),
+    });
+    expect(challengeRes.status).toBe(200);
+    const challengeBody = await challengeRes.json();
+    const message = challengeBody.challenge.message as string;
+
+    const verifyRes = await app.request('/api/auth/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.31' },
+      body: JSON.stringify({ message, signature: contractSignature }),
+    });
+
+    expect(verifyRes.status).toBe(401);
+    const verifyBody = await verifyRes.json();
+    expect(verifyBody.error).toBe('Invalid signature');
+    expect(verifyBody.session).toBeUndefined();
+  });
+
+  it('does not silently treat a failed EOA verify as enough when RPC is unset', async () => {
+    const app = createApp();
+    const account = privateKeyToAccount(generatePrivateKey());
+
+    const challengeRes = await app.request('/api/auth/challenge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.32' },
+      body: JSON.stringify({ address: account.address, chainId: 31337 }),
+    });
+    expect(challengeRes.status).toBe(200);
+    const challengeBody = await challengeRes.json();
+    const message = challengeBody.challenge.message as string;
+
+    const verifyRes = await app.request('/api/auth/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.32' },
+      body: JSON.stringify({ message, signature: `0x${'ee'.repeat(65)}` }),
+    });
+
+    expect(verifyRes.status).toBe(401);
+    const verifyBody = await verifyRes.json();
+    expect(verifyBody.error).toBe('Invalid signature');
+    expect(String(verifyBody.message)).toMatch(/ERC-1271|AQUARIUS_RPC_URL|RPC_URL/);
+  });
+
+  it('returns 503 when RPC cannot be reached for a contract-wallet check', async () => {
+    const app = createApp();
+    const contractAddress = getAddress('0x3333333333333333333333333333333333333333');
+
+    __setSignaturePublicClientForTests({
+      async getCode() {
+        throw new Error('fetch failed: ECONNREFUSED');
+      },
+      async readContract() {
+        throw new Error('unreachable');
+      },
+    });
+
+    const challengeRes = await app.request('/api/auth/challenge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.33' },
+      body: JSON.stringify({ address: contractAddress, chainId: 31337 }),
+    });
+    expect(challengeRes.status).toBe(200);
+    const challengeBody = await challengeRes.json();
+    const message = challengeBody.challenge.message as string;
+
+    const verifyRes = await app.request('/api/auth/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '203.0.113.33' },
+      body: JSON.stringify({ message, signature: `0x${'11'.repeat(65)}` }),
+    });
+
+    expect(verifyRes.status).toBe(503);
+    const verifyBody = await verifyRes.json();
+    expect(verifyBody.error).toBe('RPC unavailable');
   });
 });

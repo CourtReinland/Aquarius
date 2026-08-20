@@ -51,7 +51,7 @@ The app and API can make the product fast and pleasant, but they should not beco
 3. The API returns a Sign-In with Ethereum style message with a one-time nonce and a five-minute expiration.
 4. The same `getWalletClient()` wallet that will sign transactions signs the message locally.
 5. The app sends the signature to `POST /api/auth/verify`.
-6. The API verifies the signature with `viem.verifyMessage`.
+6. The API verifies the signature: EOA `personal_sign` via `viem.verifyMessage`, or ERC-1271 `isValidSignature` (magic `0x1626ba7e`) for contract wallets when `AQUARIUS_RPC_URL` or `RPC_URL` is set.
 7. The API deletes the nonce so the challenge cannot be reused.
 8. The API returns a 12-hour session token.
 9. The app stores that session and linked wallet in a local Aquarius Passport.
@@ -72,6 +72,8 @@ The challenge route accepts:
 | `resources` | Resource hints, currently defaults to `aquarius://identity` |
 
 The API stores challenges by nonce. When `DATABASE_URL` is set, challenges live in Postgres (`auth_challenges`) so they survive process restarts; otherwise they stay in memory. Verification fails if the challenge is missing, expired, reused, mismatched, or signed by the wrong address.
+
+Contract wallets (Safe, ERC-4337 accounts) use the same SIWE message. After EOA `personal_sign` fails, the API reads bytecode at the address and calls ERC-1271 `isValidSignature(hashMessage(message), signature)`. A return of `0x1626ba7e` is accepted. This needs `AQUARIUS_RPC_URL` or `RPC_URL`. If bytecode is present and RPC is missing or unreachable, verify returns a clear 401/503 instead of treating the wallet as an invalid EOA.
 
 ## Session Token
 
@@ -128,6 +130,7 @@ The API binds `creatorAddress` to the session wallet. If the body includes a dif
 | `AQUARIUS_AUTH_SECRET` | Required in production; HMAC secret for session tokens |
 | `AQUARIUS_CORS_ORIGINS` | Comma-separated browser origin allowlist |
 | `DATABASE_URL` | Postgres for durable challenges/sessions; unset keeps the in-memory fallback |
+| `AQUARIUS_RPC_URL` / `RPC_URL` | Required to verify ERC-1271 contract-wallet signatures on `/api/auth/verify` |
 
 ## API
 
@@ -193,7 +196,7 @@ The first implementation stores linked wallets locally. A future public linking 
 
 1. WalletConnect v2 is available on mobile (`@walletconnect/ethereum-provider`) so users can sign SIWE and contract writes with an external self-custody wallet. Coinbase Wallet as a separate SDK is still later.
 2. Support hardware wallets where the private key never enters app memory.
-3. Support ERC-1271 verification for smart contract wallets.
+3. ERC-1271 verification for smart-contract wallets is implemented on `POST /api/auth/verify` when `AQUARIUS_RPC_URL` or `RPC_URL` is set. Without RPC, only EOA `personal_sign` is checked and a failed EOA verify returns a clear error rather than treating a contract wallet as a bad EOA.
 4. Add ERC-4337 smart accounts for passkeys, gas sponsorship, and recovery.
 5. Store only public profile metadata off-chain; keep rights and obligations contract-defined.
 6. Make indexers replaceable by reconstructing state from contract events.

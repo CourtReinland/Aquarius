@@ -25,6 +25,7 @@ For a feature-by-feature snapshot of what is implemented today, read [CURRENT_BU
 │  /api/auth/verify        → Signature verification  │
 │  /api/agents/create      → Wallet + agent card     │
 │  /api/communities        → Community CRUD          │
+│  /api/indexer/*          → Event indexer stub      │
 │  /health                 → Status check            │
 └──────────────────────────────┬────────────────────┘
                                │

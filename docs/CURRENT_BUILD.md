@@ -90,7 +90,7 @@ Aquarius login is not a centralized account record. It is proof that the current
 3. API returns a one-time SIWE-style message with nonce and expiration.
 4. Wallet signs the message locally.
 5. App sends `message + signature` to `POST /api/auth/verify`.
-6. API verifies the signature with `viem.verifyMessage`.
+6. API verifies the signature with `viem.verifyMessage` for EOAs, or ERC-1271 `isValidSignature` (magic `0x1626ba7e`) for contract wallets when `AQUARIUS_RPC_URL` or `RPC_URL` is set.
 7. API returns a short-lived session token.
 8. App stores the session and linked wallet in the local Aquarius Passport.
 
@@ -125,7 +125,7 @@ Web preview cannot use SecureStore and falls back to AsyncStorage for the key â€
 - Session and challenge storage is durable in Postgres when `DATABASE_URL` is set; otherwise it stays in-memory in the API process (not durable across restarts or replicas).
 - Rate limits are per-process, not shared across multiple API instances.
 - WalletConnect v2 is available on mobile when `EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID` is set (Android-first). Coinbase Wallet SDK and hardware wallets are still later.
-- Smart-contract wallet auth needs ERC-1271 support.
+- Smart-contract wallet auth uses ERC-1271 when `AQUARIUS_RPC_URL` or `RPC_URL` is set; without RPC, only EOA `personal_sign` is verified.
 - Smart-account onboarding should use ERC-4337 in production.
 
 See [IDENTITY.md](IDENTITY.md) for the detailed identity model.
@@ -154,7 +154,7 @@ Aquarius agents are intended to be first-class community members. The current bu
 - PostgreSQL + Drizzle persistence.
 - KMS, Lit Protocol, or ERC-4337 smart accounts for agent keys.
 - Isolated agent runtime workers.
-- Event listeners with `viem.watchContractEvent`.
+- Wire the app to the API indexer stub (`GET /api/indexer/*`); expand beyond factory/community/governance events.
 - Real A2A/MCP handlers.
 - Governance-scoped permissioning for agent spending/voting/trading.
 
@@ -207,6 +207,7 @@ The API is a Hono server in `packages/api`.
 | `/api/legal/*` | Built | Legal generation/summarization (**session required**); templates public |
 | `/api/blue/*` | Built | Blue chat (**session required**); status returns `{ available }` only |
 | `/api/communities/*` | Placeholder | Community CRUD facade, future contract-backed API |
+| `/api/indexer/*` | Stub | On-chain event catch-up (`getLogs`) + `watchContractEvent`; public community list |
 
 ### Important Environment Variables
 
@@ -225,13 +226,17 @@ The API is a Hono server in `packages/api`.
 | `AGENT_OPERATOR_ALLOWLIST` | Optional wallets allowed to request operator-funded actions |
 | `AGENT_MAX_INITIAL_FUNDING_ETH` | Cap for agent `initialFundingEth` (default `0.01`) |
 | `AQUARIUS_OPERATOR_PRIVATE_KEY` | Operator wallet for agent registration/funding |
-| `AQUARIUS_RPC_URL` or `RPC_URL` | RPC URL for API-side transactions |
+| `AQUARIUS_RPC_URL` or `RPC_URL` | RPC URL for API-side transactions and ERC-1271 SIWE verification |
 | `AQUARIUS_PUBLIC_API_BASE_URL` | Public base URL used in generated agent cards |
 | `AGENT_RUNTIME_BASE_URL` | Future A2A/MCP runtime base URL |
-| `DATABASE_URL` | Postgres URL for durable auth sessions/challenges (and Agent Foundry schema). Unset = in-memory auth fallback |
+| `DATABASE_URL` | Postgres URL for durable auth sessions/challenges, Agent Foundry schema, and indexer cursors/events. Unset = in-memory fallback |
 | `EXPO_PUBLIC_AQUARIUS_API_BASE_URL` | Mobile bundle API target override |
 | `EXPO_PUBLIC_AQUARIUS_DEV_SIGNER` | Set to `1` to allow opt-in Anvil shared-key signing in the mobile UI |
 | `EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID` | Reown / WalletConnect Cloud project ID. Unset hides the WalletConnect button |
+| `INDEXER_START_BLOCK` | First block for indexer catch-up when no cursor exists (default `0`) |
+| `AQUARIUS_COMMUNITY_FACTORY_ADDRESS` / `COMMUNITY_FACTORY_ADDRESS` | Factory watched for `CommunityDeployed` (dev defaults to local Anvil) |
+| `AQUARIUS_GOVERNANCE_ADDRESS` / `GOVERNANCE_MODULE_ADDRESS` | Governance module watched for proposal/vote events (dev defaults to local Anvil) |
+| `INDEXER_DISABLED` | Set to `true` to skip starting the watcher on API boot |
 
 ## Legal Generation & Blue AI
 
@@ -318,10 +323,10 @@ The Android release APK was built and installed on a physical Pixel 3a.
 - Web app is still prototype-only; mobile is the active client.
 - Desktop app is a placeholder.
 - API persistence: auth sessions/challenges are durable in Postgres when `DATABASE_URL` is set; agents still use the JSON bridge store (Drizzle schema is ready).
-- Contract state reads are direct and local-chain oriented; production should add an indexer.
+- A stub on-chain event indexer exists at `GET /api/indexer/communities` and `GET /api/indexer/health` (catch-up + `watchContractEvent`, Postgres when `DATABASE_URL` is set). The mobile/web apps still read the chain directly; remaining work is wiring clients to this API.
 - Agent runtime is not autonomous yet.
 - WalletConnect v2 is wired into mobile `getWalletClient()` for SIWE and contract writes. Coinbase Wallet SDK, hardware wallets, and ERC-4337 onboarding are still later.
-- ERC-1271 smart-wallet signature verification is not implemented yet.
+- ERC-1271 smart-wallet SIWE verification is supported when `AQUARIUS_RPC_URL` or `RPC_URL` is set; undeployed/counterfactual accounts are still follow-ups.
 - ERC-4337 account abstraction is planned for production onboarding and agents.
 - IPFS pinning flow for generated legal documents is planned.
 - Community API CRUD route is still a placeholder facade.

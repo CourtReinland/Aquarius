@@ -124,3 +124,35 @@ export const authSessions = pgTable('auth_sessions', {
   issuedAt: timestamp('issued_at', { withTimezone: true }).notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 });
+
+/** Last processed block for the on-chain event indexer stub. */
+export const indexerCursors = pgTable('indexer_cursors', {
+  id: text('id').primaryKey(),
+  lastBlock: integer('last_block').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+});
+
+/** Materialized CommunityFactory.CommunityDeployed rows. */
+export const indexedCommunities = pgTable('indexed_communities', {
+  address: varchar('address', { length: 42 }).primaryKey(),
+  name: text('name').notNull(),
+  founders: jsonb('founders').notNull(),
+  deployedAtBlock: integer('deployed_at_block').notNull(),
+  deployedAtTimestamp: integer('deployed_at_timestamp'),
+  transactionHash: text('transaction_hash').notNull(),
+  logIndex: integer('log_index').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+});
+
+/** Normalized high-value community / governance logs. */
+export const indexedEvents = pgTable('indexed_events', {
+  id: text('id').primaryKey(),
+  eventName: text('event_name').notNull(),
+  contractAddress: varchar('contract_address', { length: 42 }).notNull(),
+  communityAddress: varchar('community_address', { length: 42 }),
+  blockNumber: integer('block_number').notNull(),
+  transactionHash: text('transaction_hash').notNull(),
+  logIndex: integer('log_index').notNull(),
+  args: jsonb('args').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+});
