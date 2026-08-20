@@ -153,7 +153,7 @@ Aquarius agents are intended to be first-class community members. The current bu
 - PostgreSQL + Drizzle persistence.
 - KMS, Lit Protocol, or ERC-4337 smart accounts for agent keys.
 - Isolated agent runtime workers.
-- Event listeners with `viem.watchContractEvent`.
+- Wire the app to the API indexer stub (`GET /api/indexer/*`); expand beyond factory/community/governance events.
 - Real A2A/MCP handlers.
 - Governance-scoped permissioning for agent spending/voting/trading.
 
@@ -206,6 +206,7 @@ The API is a Hono server in `packages/api`.
 | `/api/legal/*` | Built | Legal generation/summarization (**session required**); templates public |
 | `/api/blue/*` | Built | Blue chat (**session required**); status returns `{ available }` only |
 | `/api/communities/*` | Placeholder | Community CRUD facade, future contract-backed API |
+| `/api/indexer/*` | Stub | On-chain event catch-up (`getLogs`) + `watchContractEvent`; public community list |
 
 ### Important Environment Variables
 
@@ -227,9 +228,13 @@ The API is a Hono server in `packages/api`.
 | `AQUARIUS_RPC_URL` or `RPC_URL` | RPC URL for API-side transactions and ERC-1271 SIWE verification |
 | `AQUARIUS_PUBLIC_API_BASE_URL` | Public base URL used in generated agent cards |
 | `AGENT_RUNTIME_BASE_URL` | Future A2A/MCP runtime base URL |
-| `DATABASE_URL` | Postgres URL for durable auth sessions/challenges (and Agent Foundry schema). Unset = in-memory auth fallback |
+| `DATABASE_URL` | Postgres URL for durable auth sessions/challenges, Agent Foundry schema, and indexer cursors/events. Unset = in-memory fallback |
 | `EXPO_PUBLIC_AQUARIUS_API_BASE_URL` | Mobile bundle API target override |
 | `EXPO_PUBLIC_AQUARIUS_DEV_SIGNER` | Set to `1` to allow opt-in Anvil shared-key signing in the mobile UI |
+| `INDEXER_START_BLOCK` | First block for indexer catch-up when no cursor exists (default `0`) |
+| `AQUARIUS_COMMUNITY_FACTORY_ADDRESS` / `COMMUNITY_FACTORY_ADDRESS` | Factory watched for `CommunityDeployed` (dev defaults to local Anvil) |
+| `AQUARIUS_GOVERNANCE_ADDRESS` / `GOVERNANCE_MODULE_ADDRESS` | Governance module watched for proposal/vote events (dev defaults to local Anvil) |
+| `INDEXER_DISABLED` | Set to `true` to skip starting the watcher on API boot |
 
 ## Legal Generation & Blue AI
 
@@ -316,7 +321,7 @@ The Android release APK was built and installed on a physical Pixel 3a.
 - Web app is still prototype-only; mobile is the active client.
 - Desktop app is a placeholder.
 - API persistence: auth sessions/challenges are durable in Postgres when `DATABASE_URL` is set; agents still use the JSON bridge store (Drizzle schema is ready).
-- Contract state reads are direct and local-chain oriented; production should add an indexer.
+- A stub on-chain event indexer exists at `GET /api/indexer/communities` and `GET /api/indexer/health` (catch-up + `watchContractEvent`, Postgres when `DATABASE_URL` is set). The mobile/web apps still read the chain directly; remaining work is wiring clients to this API.
 - Agent runtime is not autonomous yet.
 - External WalletConnect v2 / Coinbase Wallet / hardware connectors are planned but not fully integrated into the app flow.
 - ERC-1271 smart-wallet SIWE verification is supported when `AQUARIUS_RPC_URL` or `RPC_URL` is set; WalletConnect UI and undeployed/counterfactual accounts are still follow-ups.
