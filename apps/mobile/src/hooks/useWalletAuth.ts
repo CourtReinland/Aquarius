@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { API_BASE } from '../config/api';
-import { getWalletClient } from '../wallet/signer';
+import { getSignerMode, getWalletClient } from '../wallet/signer';
 import { useWalletStore, type WalletSession } from './useWalletStore';
 
 interface ChallengeResponse {
@@ -81,7 +81,7 @@ export function useWalletAuth() {
         linkWallet({
           address: session.address,
           chainId: session.chainId,
-          label: 'Primary wallet',
+          label: getSignerMode() === 'walletconnect' ? 'WalletConnect' : 'Primary wallet',
           lastSignedInAt: new Date().toISOString(),
         });
 

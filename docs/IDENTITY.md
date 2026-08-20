@@ -40,12 +40,13 @@ The app and API can make the product fast and pleasant, but they should not beco
 | Local Passport store | `apps/mobile/src/hooks/useWalletStore.ts` |
 | Signing key storage | `apps/mobile/src/wallet/keyStorage.ts` |
 | WalletClient / signer | `apps/mobile/src/wallet/signer.ts` |
+| WalletConnect v2 session | `apps/mobile/src/wallet/walletconnect.ts` |
 | Wallet connect UI | `apps/mobile/src/components/WalletConnect.tsx` |
 | Agent auth enforcement | `packages/api/src/routes/agents.ts` |
 
 ## Implemented Flow
 
-1. The user creates or imports a personal local wallet (SecureStore on native). Optionally, with `EXPO_PUBLIC_AQUARIUS_DEV_SIGNER=1`, they may choose Anvil account #0 for local gas — never as a silent default.
+1. The user creates or imports a personal local wallet (SecureStore on native), or connects an external wallet with WalletConnect v2 when `EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID` is set. Optionally, with `EXPO_PUBLIC_AQUARIUS_DEV_SIGNER=1`, they may choose Anvil account #0 for local gas — never as a silent default.
 2. The app requests `POST /api/auth/challenge`.
 3. The API returns a Sign-In with Ethereum style message with a one-time nonce and a five-minute expiration.
 4. The same `getWalletClient()` wallet that will sign transactions signs the message locally.
@@ -190,7 +191,7 @@ The first implementation stores linked wallets locally. A future public linking 
 
 ## Production Path
 
-1. Add WalletConnect v2 / Coinbase Wallet so users sign with external self-custody wallets.
+1. WalletConnect v2 is available on mobile (`@walletconnect/ethereum-provider`) so users can sign SIWE and contract writes with an external self-custody wallet. Coinbase Wallet as a separate SDK is still later.
 2. Support hardware wallets where the private key never enters app memory.
 3. Support ERC-1271 verification for smart contract wallets.
 4. Add ERC-4337 smart accounts for passkeys, gas sponsorship, and recovery.

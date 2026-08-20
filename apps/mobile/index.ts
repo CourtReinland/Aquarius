@@ -1,3 +1,4 @@
+import './src/wallet/walletconnect-polyfill';
 import { registerRootComponent } from 'expo';
 
 import App from './App';

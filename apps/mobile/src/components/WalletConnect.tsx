@@ -1,29 +1,42 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
+  Share,
+  Platform,
 } from 'react-native';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { useWalletStore } from '../hooks/useWalletStore';
 import { useWalletAuth } from '../hooks/useWalletAuth';
+import { useWalletConnect } from '../hooks/useWalletConnect';
 import { isDevSignerEnabled } from '../config/env';
 import { defaultChain } from '../config/chains';
 import { showAlert } from '../utils/alert';
 import {
   clearSigningKey,
+  getSignerMode,
   isDevAnvilSignerActive,
   setSigningKey,
   useAnvilDevSigner,
 } from '../wallet/signer';
+import {
+  connectWalletConnect,
+  disconnectWalletConnect,
+  isWalletConnectSessionActive,
+  openWalletConnectUri,
+} from '../wallet/walletconnect';
 
 /**
- * Local-wallet connect UI.
+ * Wallet connect UI.
  *
- * Default (secure) path: generate or import a personal key, persist via
- * SecureStore, and sign SIWE + txs with that same WalletClient.
+ * Local path: generate or import a personal key, persist via SecureStore,
+ * and sign SIWE + txs with that same WalletClient.
+ *
+ * WalletConnect v2: when EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID is set, connect
+ * an external wallet. getWalletClient() prefers the WC session.
  *
  * Dev path (opt-in): EXPO_PUBLIC_AQUARIUS_DEV_SIGNER=1 enables the Anvil
  * account #0 button for local gas. That mode is labeled in the UI.
@@ -32,10 +45,13 @@ import {
 export function WalletConnect() {
   const { address, isConnected, session, linkedWallets, connect, disconnect } = useWalletStore();
   const { signInWithConnectedWallet, isSigningIn, error: authError } = useWalletAuth();
+  const walletConnect = useWalletConnect();
   const [privateKeyInput, setPrivateKeyInput] = useState('');
   const [showInput, setShowInput] = useState(false);
   const devSignerEnabled = isDevSignerEnabled();
   const usingDevAnvil = isDevAnvilSignerActive();
+  const usingWalletConnect = getSignerMode() === 'walletconnect';
+  const wasWalletConnect = useRef(walletConnect.connected);
 
   const finishConnect = async (accountAddress: `0x${string}`) => {
     connect(accountAddress, defaultChain.id);
@@ -48,8 +64,18 @@ export function WalletConnect() {
     }
   };
 
+  useEffect(() => {
+    if (wasWalletConnect.current && !walletConnect.connected && !walletConnect.connecting) {
+      disconnect();
+    }
+    wasWalletConnect.current = walletConnect.connected;
+  }, [disconnect, walletConnect.connected, walletConnect.connecting]);
+
   const handleGenerateWallet = async () => {
     try {
+      if (isWalletConnectSessionActive()) {
+        await disconnectWalletConnect();
+      }
       const pk = generatePrivateKey();
       const account = await setSigningKey(pk);
       // Never log the private key — address only.
@@ -63,6 +89,9 @@ export function WalletConnect() {
 
   const handleUseAnvilDevSigner = async () => {
     try {
+      if (isWalletConnectSessionActive()) {
+        await disconnectWalletConnect();
+      }
       const account = await useAnvilDevSigner();
       console.log('[Wallet] Connected DEV Anvil signer:', account.address);
       await finishConnect(account.address);
@@ -79,6 +108,9 @@ export function WalletConnect() {
         : (`0x${privateKeyInput}` as `0x${string}`);
       // Validate before persisting.
       privateKeyToAccount(pk);
+      if (isWalletConnectSessionActive()) {
+        await disconnectWalletConnect();
+      }
       const account = await setSigningKey(pk);
       setPrivateKeyInput('');
       setShowInput(false);
@@ -89,10 +121,80 @@ export function WalletConnect() {
     }
   };
 
+  const handleConnectWalletConnect = async () => {
+    try {
+      const accountAddress = await connectWalletConnect();
+      console.log('[Wallet] Connected WalletConnect:', accountAddress);
+      await finishConnect(accountAddress);
+    } catch (error: any) {
+      const message = error?.message || 'WalletConnect pairing failed';
+      if (/reject|denied|cancel/i.test(message)) return;
+      console.error('[Wallet] WalletConnect failed:', message);
+      showAlert('WalletConnect', message);
+    }
+  };
+
+  const handleSharePairingUri = async () => {
+    if (!walletConnect.pairingUri) return;
+    try {
+      await Share.share({ message: walletConnect.pairingUri });
+    } catch {
+      // User dismissed the share sheet.
+    }
+  };
+
+  const handleOpenPairingUri = async () => {
+    if (!walletConnect.pairingUri) return;
+    const opened = await openWalletConnectUri(walletConnect.pairingUri);
+    if (!opened) {
+      showAlert(
+        'Open Wallet',
+        'No installed wallet handled the WalletConnect link. Copy the pairing URI into MetaMask, Rainbow, or another WC-compatible wallet.'
+      );
+    }
+  };
+
   const handleDisconnect = async () => {
-    await clearSigningKey();
+    if (isWalletConnectSessionActive()) {
+      await disconnectWalletConnect();
+    } else {
+      await clearSigningKey();
+    }
     disconnect();
   };
+
+  if (walletConnect.connecting || walletConnect.pairingUri) {
+    return (
+      <View style={styles.connectedContainer}>
+        <Text style={styles.pairingTitle}>Approve in your wallet</Text>
+        <Text style={styles.pairingHint}>
+          Scan or paste this WalletConnect URI in MetaMask, Rainbow, or another WC v2 wallet.
+        </Text>
+        {walletConnect.pairingUri ? (
+          <Text selectable style={styles.uriText}>
+            {walletConnect.pairingUri}
+          </Text>
+        ) : (
+          <Text style={styles.sessionText}>Waiting for pairing URI…</Text>
+        )}
+        <View style={styles.pairingActions}>
+          {walletConnect.pairingUri ? (
+            <TouchableOpacity style={styles.secondaryButton} onPress={handleSharePairingUri}>
+              <Text style={styles.secondaryButtonText}>Share pairing URI</Text>
+            </TouchableOpacity>
+          ) : null}
+          {walletConnect.pairingUri && Platform.OS === 'android' ? (
+            <TouchableOpacity style={styles.wcButton} onPress={handleOpenPairingUri}>
+              <Text style={styles.wcButtonText}>Open installed wallet</Text>
+            </TouchableOpacity>
+          ) : null}
+          <TouchableOpacity style={styles.disconnectBtn} onPress={() => void disconnectWalletConnect()}>
+            <Text style={styles.disconnectText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   if (isConnected && address) {
     return (
@@ -100,6 +202,11 @@ export function WalletConnect() {
         {usingDevAnvil ? (
           <View style={styles.devBanner}>
             <Text style={styles.devBannerText}>DEV SIGNER ACTIVE — Anvil shared key</Text>
+          </View>
+        ) : null}
+        {usingWalletConnect ? (
+          <View style={styles.wcBanner}>
+            <Text style={styles.wcBannerText}>WalletConnect — external wallet</Text>
           </View>
         ) : null}
         <View style={styles.addressRow}>
@@ -113,7 +220,7 @@ export function WalletConnect() {
           {session ? 'Signed in' : 'Wallet only'}
           {linkedWallets.length > 0 ? ` · ${linkedWallets.length} linked` : ''}
           {' · '}
-          {usingDevAnvil ? 'dev-anvil' : 'local-key'}
+          {usingWalletConnect ? 'walletconnect' : usingDevAnvil ? 'dev-anvil' : 'local-key'}
         </Text>
         <TouchableOpacity style={styles.disconnectBtn} onPress={handleDisconnect}>
           <Text style={styles.disconnectText}>Disconnect</Text>
@@ -130,6 +237,18 @@ export function WalletConnect() {
             DEV SIGNER ENABLED — Anvil shared key available for local gas
           </Text>
         </View>
+      ) : null}
+
+      {walletConnect.available ? (
+        <TouchableOpacity
+          style={styles.wcButton}
+          onPress={handleConnectWalletConnect}
+          disabled={isSigningIn}
+        >
+          <Text style={styles.wcButtonText}>
+            {isSigningIn ? 'Signing In...' : 'Connect WalletConnect'}
+          </Text>
+        </TouchableOpacity>
       ) : null}
 
       <TouchableOpacity
@@ -180,11 +299,13 @@ export function WalletConnect() {
 
       <Text style={styles.hint}>
         {defaultChain.name}. Keys stay on device
+        {walletConnect.available ? ', or sign with WalletConnect' : ''}
         {defaultChain.id === 31337 && !devSignerEnabled
           ? '. For pre-funded Anvil gas set EXPO_PUBLIC_AQUARIUS_DEV_SIGNER=1.'
           : '.'}
       </Text>
       {authError ? <Text style={styles.authError}>{authError}</Text> : null}
+      {walletConnect.error ? <Text style={styles.authError}>{walletConnect.error}</Text> : null}
     </View>
   );
 }
@@ -218,6 +339,23 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#30363D', paddingVertical: 14, borderRadius: 10, alignItems: 'center',
   },
   secondaryButtonText: { color: '#8B949E', fontSize: 16 },
+  wcButton: {
+    backgroundColor: '#1F3A5F', borderWidth: 1, borderColor: '#58A6FF',
+    paddingVertical: 14, borderRadius: 10, alignItems: 'center',
+  },
+  wcButtonText: { color: '#58A6FF', fontSize: 16, fontWeight: '600' },
+  wcBanner: {
+    backgroundColor: '#12233A', borderWidth: 1, borderColor: '#58A6FF',
+    borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8,
+  },
+  wcBannerText: { color: '#58A6FF', fontSize: 11, fontWeight: '700', textAlign: 'center' },
+  pairingTitle: { color: '#E6EDF3', fontSize: 14, fontWeight: '600' },
+  pairingHint: { color: '#8B949E', fontSize: 12 },
+  pairingActions: { gap: 8 },
+  uriText: {
+    color: '#E6EDF3', fontSize: 11, fontFamily: 'monospace',
+    backgroundColor: '#0D1117', padding: 8, borderRadius: 6,
+  },
   devButton: {
     backgroundColor: '#3D2E00', borderWidth: 1, borderColor: '#F0B429',
     paddingVertical: 14, borderRadius: 10, alignItems: 'center',

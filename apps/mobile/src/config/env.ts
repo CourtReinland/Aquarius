@@ -27,3 +27,20 @@ export function isDevSignerEnabled(): boolean {
 export function getConfiguredApiBaseUrl(): string | undefined {
   return readExpoPublic('EXPO_PUBLIC_AQUARIUS_API_BASE_URL');
 }
+
+/**
+ * Reown / WalletConnect Cloud project ID.
+ *
+ * When unset or empty, the Connect WalletConnect button is hidden and the
+ * provider is never initialized (no crash).
+ *
+ *   EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID=...
+ */
+export function getWalletConnectProjectId(): string | undefined {
+  const value = readExpoPublic('EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID')?.trim();
+  return value || undefined;
+}
+
+export function isWalletConnectConfigured(): boolean {
+  return Boolean(getWalletConnectProjectId());
+}
