@@ -90,7 +90,7 @@ Aquarius login is not a centralized account record. It is proof that the current
 3. API returns a one-time SIWE-style message with nonce and expiration.
 4. Wallet signs the message locally.
 5. App sends `message + signature` to `POST /api/auth/verify`.
-6. API verifies the signature with `viem.verifyMessage`.
+6. API verifies the signature with `viem.verifyMessage` for EOAs, or ERC-1271 `isValidSignature` (magic `0x1626ba7e`) for contract wallets when `AQUARIUS_RPC_URL` or `RPC_URL` is set.
 7. API returns a short-lived session token.
 8. App stores the session and linked wallet in the local Aquarius Passport.
 
@@ -124,7 +124,7 @@ Web preview cannot use SecureStore and falls back to AsyncStorage for the key â€
 - Session and challenge storage is durable in Postgres when `DATABASE_URL` is set; otherwise it stays in-memory in the API process (not durable across restarts or replicas).
 - Rate limits are per-process, not shared across multiple API instances.
 - Production wallet connectors are planned: WalletConnect v2, Coinbase Wallet, hardware wallets.
-- Smart-contract wallet auth needs ERC-1271 support.
+- Smart-contract wallet auth uses ERC-1271 when `AQUARIUS_RPC_URL` or `RPC_URL` is set; without RPC, only EOA `personal_sign` is verified.
 - Smart-account onboarding should use ERC-4337 in production.
 
 See [IDENTITY.md](IDENTITY.md) for the detailed identity model.
@@ -224,7 +224,7 @@ The API is a Hono server in `packages/api`.
 | `AGENT_OPERATOR_ALLOWLIST` | Optional wallets allowed to request operator-funded actions |
 | `AGENT_MAX_INITIAL_FUNDING_ETH` | Cap for agent `initialFundingEth` (default `0.01`) |
 | `AQUARIUS_OPERATOR_PRIVATE_KEY` | Operator wallet for agent registration/funding |
-| `AQUARIUS_RPC_URL` or `RPC_URL` | RPC URL for API-side transactions |
+| `AQUARIUS_RPC_URL` or `RPC_URL` | RPC URL for API-side transactions and ERC-1271 SIWE verification |
 | `AQUARIUS_PUBLIC_API_BASE_URL` | Public base URL used in generated agent cards |
 | `AGENT_RUNTIME_BASE_URL` | Future A2A/MCP runtime base URL |
 | `DATABASE_URL` | Postgres URL for durable auth sessions/challenges (and Agent Foundry schema). Unset = in-memory auth fallback |
@@ -319,7 +319,7 @@ The Android release APK was built and installed on a physical Pixel 3a.
 - Contract state reads are direct and local-chain oriented; production should add an indexer.
 - Agent runtime is not autonomous yet.
 - External WalletConnect v2 / Coinbase Wallet / hardware connectors are planned but not fully integrated into the app flow.
-- ERC-1271 smart-wallet signature verification is not implemented yet.
+- ERC-1271 smart-wallet SIWE verification is supported when `AQUARIUS_RPC_URL` or `RPC_URL` is set; WalletConnect UI and undeployed/counterfactual accounts are still follow-ups.
 - ERC-4337 account abstraction is planned for production onboarding and agents.
 - IPFS pinning flow for generated legal documents is planned.
 - Community API CRUD route is still a placeholder facade.
