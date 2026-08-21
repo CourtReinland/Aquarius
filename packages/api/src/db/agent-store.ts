@@ -369,12 +369,12 @@ export function reconstructAgentCard(agent: Pick<
     runtime: {
       provider: passport.runtime.provider,
       model: passport.runtime.model,
-      status: passport.runtime.status === 'configured' ? 'configured' : 'pending-orchestrator',
+      status: passport.runtime.status === 'active' ? 'configured' : 'pending-orchestrator',
     },
     endpoints: {
       card: passport.runtime.endpoints.card,
-      a2a: passport.runtime.endpoints.a2a,
-      mcp: passport.runtime.endpoints.mcp,
+      a2a: passport.runtime.endpoints.a2a ?? '',
+      mcp: passport.runtime.endpoints.mcp ?? '',
     },
     promptHash: agent.promptHash,
     createdAt: agent.createdAt,
