@@ -6,7 +6,6 @@ import {
   http,
   isAddress,
   parseEther,
-  type Hash,
 } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import {
@@ -15,9 +14,6 @@ import {
   randomBytes,
   randomUUID,
 } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   AGENT_PASSPORT_SCHEMA_VERSION,
   AGENT_STANDARD,
@@ -35,6 +31,25 @@ import {
 } from '@aquarius/shared';
 import { getSessionFromAuthorization } from './auth.js';
 import { maxInitialFundingEth, operatorActionsAllowed } from '../lib/env.js';
+import {
+  defaultContractWatcherState,
+  getAgentStore,
+  type AgentCard,
+  type AgentMemoryRecord,
+  type AgentSigningRequest,
+  type AgentWalletPolicy,
+  type EncryptedPrivateKey,
+  type FundingResult,
+  type RegistrationResult,
+  type StoredAgent,
+  type WalletStorageType,
+} from '../db/agent-store.js';
+
+export {
+  resetAgentStoreForTests,
+  __resetAgentsForTests,
+  __setAgentStoreForTests,
+} from '../db/agent-store.js';
 
 export const agentRoutes = new Hono();
 
@@ -260,235 +275,11 @@ type ContractEventInput = z.infer<typeof contractEventSchema>;
 
 type ChatTurnInput = z.infer<typeof chatTurnSchema>;
 
-interface StoredAgent {
-  agentId: string;
-  communityAddress: `0x${string}`;
-  communityName: string | null;
-  creatorAddress: `0x${string}` | null;
-  walletAddress: `0x${string}`;
-  agentCard: AgentCard;
-  passport: AquariusAgentPassportV1;
-  metadataUri: string;
-  encryptedPrivateKey: EncryptedPrivateKey | null;
-  keyStorage: 'encrypted-memory' | 'not-stored';
-  walletPolicy: AgentWalletPolicy;
-  registration: RegistrationResult;
-  initialFunding: FundingResult;
-  promptHash: string;
-  promptTemplate: string;
-  events: AgentRuntimeEvent[];
-  signingRequests: AgentSigningRequest[];
-  memoryRecords: AgentMemoryRecord[];
-  contractWatcher: ContractWatcherState;
-  createdAt: string;
-}
-
-type PublicStoredAgent = Omit<StoredAgent, 'encryptedPrivateKey' | 'promptTemplate'>;
-
-type WalletStorageType = 'local-encrypted' | 'kms' | 'lit' | 'smart-account-session';
-
-interface AgentWalletPolicy {
-  storage: {
-    type: WalletStorageType;
-    keyRef: string | null;
-    configured: boolean;
-  };
-  signer: 'eoa' | 'kms' | 'lit' | 'smart-account';
-  humanApprovalRequired: boolean;
-  riskyActions: string[];
-  sessionKey: {
-    enabled: boolean;
-    expiresAt: string | null;
-  };
-}
-
-interface AgentSigningRequest {
-  id: string;
-  agentId: string;
-  action: SigningRequestInput['action'];
-  to: `0x${string}` | null;
-  valueEth: string;
-  data: string | null;
-  risk: SigningRequestInput['risk'];
-  reason: string;
-  status: 'pending-human-approval' | 'approved-not-signed' | 'rejected-by-policy';
-  humanApprovalRequired: boolean;
-  approvedBy: `0x${string}` | null;
-  transactionHash: Hash | null;
-  createdAt: string;
-}
-
-interface AgentMemoryRecord {
-  id: string;
-  agentId: string;
-  type: 'chat-turn' | 'contract-event';
-  visibility: 'community' | 'private' | 'session';
-  summary: string;
-  sourceEventId: string;
-  createdAt: string;
-}
-
-interface ContractWatcherState {
-  status: 'reserved' | 'connected';
-  lastTransactionHash: string | null;
-  lastEventName: string | null;
-  lastBlockNumber: number | null;
-}
-
-interface PrivateRuntimeConfig {
-  agentId: string;
-  promptTemplate: string;
-  encryptedPrivateKey: EncryptedPrivateKey | null;
-      runtimeConfig: {
-        harness: string;
-        provider: string;
-        model: string;
-        promptHash: string;
-        keyStorage: StoredAgent['keyStorage'];
-        walletStorage: AgentWalletPolicy['storage'];
-      };
-  updatedAt: string;
-}
-
-interface AgentStoreDocumentV2 {
-  version: 2;
-  publicAgents: PublicStoredAgent[];
-  privateRuntimeConfigs: PrivateRuntimeConfig[];
-}
-
-interface AgentRuntimeEvent {
-  id: string;
-  agentId: string;
-  type: 'chat.user_message' | 'chat.agent_message' | 'runtime.signing_request' | 'contract.event';
-  actorAddress: `0x${string}` | null;
-  payload: Record<string, unknown>;
-  createdAt: string;
-}
-
-interface AgentCard {
-  schemaVersion: 'aquarius.agent-card.v1';
-  standard: 'ERC-8004';
-  agentId: string;
-  name: string;
-  description: string;
-  role: string;
-  capabilities: string[];
-  communityAddress: `0x${string}`;
-  communityName: string | null;
-  paymentAddress: `0x${string}`;
-  wallet: {
-    type: 'EOA';
-    chain: string;
-  };
-  runtime: {
-    provider: string;
-    model: string;
-    status: 'configured' | 'pending-orchestrator';
-  };
-  endpoints: {
-    card: string;
-    a2a: string;
-    mcp: string;
-  };
-  promptHash: string;
-  createdAt: string;
-}
-
-interface EncryptedPrivateKey {
-  algorithm: 'aes-256-gcm';
-  ciphertext: string;
-  iv: string;
-  tag: string;
-}
-
-interface RegistrationResult {
-  mode: 'on-chain' | 'skipped' | 'failed';
-  transactionHash: Hash | null;
-  reason?: string;
-}
-
-interface FundingResult {
-  requestedEth: string;
-  transactionHash: Hash | null;
-  status: 'sent' | 'skipped' | 'failed';
-  reason?: string;
-}
-
 interface FirstMoment {
   introMessage: string;
   passportUrl: string;
   portraitStatus: 'pending-media-service' | 'configured';
   suggestedCommunityPost: string;
-}
-
-const DEFAULT_AGENT_STORE_FILE = fileURLToPath(new URL('../../data/agents.json', import.meta.url));
-let agentStoreFile: string | null = process.env.AGENT_STORE_FILE ?? DEFAULT_AGENT_STORE_FILE;
-let agents = loadAgentsFromStore();
-
-function loadAgentsFromStore(): Map<string, StoredAgent> {
-  if (!agentStoreFile || !existsSync(agentStoreFile)) return new Map();
-
-  const raw = readFileSync(agentStoreFile, 'utf8').trim();
-  if (!raw) return new Map();
-
-  const parsed = JSON.parse(raw) as StoredAgent[] | AgentStoreDocumentV2;
-
-  if (Array.isArray(parsed)) {
-    return new Map(parsed.map((agent) => [agent.agentId, { ...agent, events: agent.events ?? [] }]));
-  }
-
-  const runtimeConfigs = new Map(parsed.privateRuntimeConfigs.map((config) => [config.agentId, config]));
-  return new Map(parsed.publicAgents.map((publicAgent) => {
-    const runtimeConfig = runtimeConfigs.get(publicAgent.agentId);
-    const restoredAgent: StoredAgent = {
-      ...publicAgent,
-      encryptedPrivateKey: runtimeConfig?.encryptedPrivateKey ?? null,
-      promptTemplate: runtimeConfig?.promptTemplate ?? '',
-      events: publicAgent.events ?? [],
-      signingRequests: publicAgent.signingRequests ?? [],
-      memoryRecords: publicAgent.memoryRecords ?? [],
-      contractWatcher: publicAgent.contractWatcher ?? defaultContractWatcherState(),
-      walletPolicy: publicAgent.walletPolicy ?? buildWalletPolicy({ type: 'local-encrypted', humanApprovalRequired: true }, Boolean(runtimeConfig?.encryptedPrivateKey)),
-    };
-    return [restoredAgent.agentId, restoredAgent];
-  }));
-}
-
-function persistAgentsToStore() {
-  if (!agentStoreFile) return;
-  mkdirSync(dirname(agentStoreFile), { recursive: true });
-  const document: AgentStoreDocumentV2 = {
-    version: 2,
-    publicAgents: [...agents.values()].map((agent) => {
-      const { encryptedPrivateKey, promptTemplate, ...publicAgent } = agent;
-      return publicAgent;
-    }),
-    privateRuntimeConfigs: [...agents.values()].map((agent) => ({
-      agentId: agent.agentId,
-      promptTemplate: agent.promptTemplate,
-      encryptedPrivateKey: agent.encryptedPrivateKey,
-      runtimeConfig: {
-        harness: agent.passport.runtime.harness,
-        provider: agent.passport.runtime.provider,
-        model: agent.passport.runtime.model,
-        promptHash: agent.promptHash,
-        keyStorage: agent.keyStorage,
-        walletStorage: agent.walletPolicy.storage,
-      },
-      updatedAt: agent.passport.updatedAt,
-    })),
-  };
-  writeFileSync(agentStoreFile, JSON.stringify(document, null, 2));
-}
-
-export function resetAgentStoreForTests(storeFile: string | null) {
-  agentStoreFile = storeFile;
-  agents = loadAgentsFromStore();
-}
-
-/** Test helper — clears in-memory agent registry without changing the store path. */
-export function __resetAgentsForTests() {
-  agents.clear();
 }
 
 function wantsOperatorAction(input: CreateAgentInput): boolean {
@@ -538,15 +329,6 @@ function encryptPrivateKey(privateKey: `0x${string}`): EncryptedPrivateKey | nul
     ciphertext: ciphertext.toString('base64'),
     iv: iv.toString('base64'),
     tag: tag.toString('base64'),
-  };
-}
-
-function defaultContractWatcherState(): ContractWatcherState {
-  return {
-    status: 'reserved',
-    lastTransactionHash: null,
-    lastEventName: null,
-    lastBlockNumber: null,
   };
 }
 
@@ -1136,8 +918,7 @@ agentRoutes.post('/create', async (c) => {
       createdAt,
     };
 
-    agents.set(agentId, storedAgent);
-    persistAgentsToStore();
+    await getAgentStore().put(storedAgent);
 
     return c.json({
       success: true,
@@ -1179,14 +960,12 @@ agentRoutes.get('/', async (c) => {
     return c.json({ error: 'Invalid communityAddress' }, 400);
   }
 
-  const list = [...agents.values()]
-    .filter((agent) => agent.creatorAddress?.toLowerCase() === session.address.toLowerCase())
-    .filter(
-      (agent) =>
-        !communityAddress ||
-        agent.communityAddress.toLowerCase() === communityAddress.toLowerCase()
-    )
-    .map(safeAgent);
+  const list = (
+    await getAgentStore().list({
+      creatorAddress: session.address,
+      communityAddress: communityAddress || undefined,
+    })
+  ).map(safeAgent);
 
   return c.json({
     agents: list,
@@ -1194,9 +973,9 @@ agentRoutes.get('/', async (c) => {
   });
 });
 
-agentRoutes.get('/:agentId', (c) => {
+agentRoutes.get('/:agentId', async (c) => {
   const agentId = decodeURIComponent(c.req.param('agentId'));
-  const agent = agents.get(agentId);
+  const agent = await getAgentStore().get(agentId);
 
   if (!agent) {
     return c.json({ error: 'Agent not found' }, 404);
@@ -1208,7 +987,7 @@ agentRoutes.get('/:agentId', (c) => {
 agentRoutes.patch('/:agentId', async (c) => {
   try {
     const agentId = decodeURIComponent(c.req.param('agentId'));
-    const agent = agents.get(agentId);
+    const agent = await getAgentStore().get(agentId);
 
     if (!agent) {
       return c.json({ error: 'Agent not found' }, 404);
@@ -1217,8 +996,7 @@ agentRoutes.patch('/:agentId', async (c) => {
     const body = await c.req.json();
     const input = updateAgentSchema.parse(body);
     const updatedAgent = applyAgentUpdate(agent, input);
-    agents.set(agentId, updatedAgent);
-    persistAgentsToStore();
+    await getAgentStore().put(updatedAgent);
 
     return c.json({
       success: true,
@@ -1236,14 +1014,14 @@ agentRoutes.patch('/:agentId', async (c) => {
   }
 });
 
-agentRoutes.get('/:agentId/orchestrator/status', (c) => {
-  const { agent } = getAgentOrNotFound(c);
+agentRoutes.get('/:agentId/orchestrator/status', async (c) => {
+  const { agent } = await getAgentOrNotFound(c);
   if (!agent) return c.json({ error: 'Agent not found' }, 404);
   return c.json(orchestratorStatus(agent));
 });
 
-agentRoutes.get('/:agentId/memory', (c) => {
-  const { agent } = getAgentOrNotFound(c);
+agentRoutes.get('/:agentId/memory', async (c) => {
+  const { agent } = await getAgentOrNotFound(c);
   if (!agent) return c.json({ error: 'Agent not found' }, 404);
   return c.json({
     records: agent.memoryRecords,
@@ -1252,15 +1030,15 @@ agentRoutes.get('/:agentId/memory', (c) => {
   });
 });
 
-agentRoutes.get('/:agentId/signing-requests', (c) => {
-  const { agent } = getAgentOrNotFound(c);
+agentRoutes.get('/:agentId/signing-requests', async (c) => {
+  const { agent } = await getAgentOrNotFound(c);
   if (!agent) return c.json({ error: 'Agent not found' }, 404);
   return c.json({ signingRequests: agent.signingRequests, total: agent.signingRequests.length });
 });
 
 agentRoutes.post('/:agentId/signing-requests', async (c) => {
   try {
-    const { agent, agentId } = getAgentOrNotFound(c);
+    const { agent, agentId } = await getAgentOrNotFound(c);
     if (!agent) return c.json({ error: 'Agent not found' }, 404);
 
     const input = signingRequestSchema.parse(await c.req.json());
@@ -1298,8 +1076,7 @@ agentRoutes.post('/:agentId/signing-requests', async (c) => {
       },
       createdAt: signingRequest.createdAt,
     });
-    agents.set(agentId, agent);
-    persistAgentsToStore();
+    await getAgentStore().put(agent);
 
     return c.json({ signingRequest, walletStorage: agent.walletPolicy.storage }, 202);
   } catch (error: any) {
@@ -1312,7 +1089,7 @@ agentRoutes.post('/:agentId/signing-requests', async (c) => {
 
 agentRoutes.post('/:agentId/contract-events', async (c) => {
   try {
-    const { agent, agentId } = getAgentOrNotFound(c);
+    const { agent, agentId } = await getAgentOrNotFound(c);
     if (!agent) return c.json({ error: 'Agent not found' }, 404);
 
     const input = contractEventSchema.parse(await c.req.json());
@@ -1332,8 +1109,7 @@ agentRoutes.post('/:agentId/contract-events', async (c) => {
       lastEventName: input.eventName,
       lastBlockNumber: input.blockNumber ?? null,
     };
-    agents.set(agentId, agent);
-    persistAgentsToStore();
+    await getAgentStore().put(agent);
 
     return c.json({ accepted: true, eventId, contractWatcher: agent.contractWatcher }, 202);
   } catch (error: any) {
@@ -1351,7 +1127,7 @@ agentRoutes.post('/:agentId/contract-events', async (c) => {
 agentRoutes.post('/:agentId/chat', async (c) => {
   try {
     const agentId = decodeURIComponent(c.req.param('agentId'));
-    const agent = agents.get(agentId);
+    const agent = await getAgentStore().get(agentId);
 
     if (!agent) {
       return c.json({ error: 'Agent not found' }, 404);
@@ -1410,8 +1186,7 @@ agentRoutes.post('/:agentId/chat', async (c) => {
         sourceEventId: agentEventId,
       });
     }
-    agents.set(agentId, agent);
-    persistAgentsToStore();
+    await getAgentStore().put(agent);
 
     return c.json({
       ...response,
@@ -1431,15 +1206,15 @@ agentRoutes.post('/:agentId/chat', async (c) => {
   }
 });
 
-function getAgentOrNotFound(c: any) {
+async function getAgentOrNotFound(c: any) {
   const agentId = decodeURIComponent(c.req.param('agentId'));
-  const agent = agents.get(agentId);
+  const agent = await getAgentStore().get(agentId);
   if (!agent) return { agentId, agent: null };
   return { agentId, agent };
 }
 
-agentRoutes.all('/:agentId/a2a', (c) => {
-  const { agent, agentId } = getAgentOrNotFound(c);
+agentRoutes.all('/:agentId/a2a', async (c) => {
+  const { agent, agentId } = await getAgentOrNotFound(c);
   if (!agent) return c.json({ error: 'Agent not found' }, 404);
 
   return c.json({
@@ -1456,8 +1231,8 @@ agentRoutes.all('/:agentId/a2a', (c) => {
   }, 202);
 });
 
-agentRoutes.all('/:agentId/mcp', (c) => {
-  const { agent, agentId } = getAgentOrNotFound(c);
+agentRoutes.all('/:agentId/mcp', async (c) => {
+  const { agent, agentId } = await getAgentOrNotFound(c);
   if (!agent) return c.json({ error: 'Agent not found' }, 404);
 
   return c.json({
@@ -1473,8 +1248,8 @@ agentRoutes.all('/:agentId/mcp', (c) => {
   }, 202);
 });
 
-agentRoutes.post('/:agentId/selfies', (c) => {
-  const { agent, agentId } = getAgentOrNotFound(c);
+agentRoutes.post('/:agentId/selfies', async (c) => {
+  const { agent, agentId } = await getAgentOrNotFound(c);
   if (!agent) return c.json({ error: 'Agent not found' }, 404);
 
   return c.json({
@@ -1492,9 +1267,9 @@ agentRoutes.post('/:agentId/selfies', (c) => {
  * GET /api/agents/:agentId/events
  * Return durable public runtime events for the early agent orchestrator boundary.
  */
-agentRoutes.get('/:agentId/events', (c) => {
+agentRoutes.get('/:agentId/events', async (c) => {
   const agentId = decodeURIComponent(c.req.param('agentId'));
-  const agent = agents.get(agentId);
+  const agent = await getAgentStore().get(agentId);
 
   if (!agent) {
     return c.json({ error: 'Agent not found' }, 404);
@@ -1510,9 +1285,9 @@ agentRoutes.get('/:agentId/events', (c) => {
  * GET /api/agents/:agentId/card
  * Return the public agent card advertised as the metadata URI.
  */
-agentRoutes.get('/:agentId/passport', (c) => {
+agentRoutes.get('/:agentId/passport', async (c) => {
   const agentId = decodeURIComponent(c.req.param('agentId'));
-  const agent = agents.get(agentId);
+  const agent = await getAgentStore().get(agentId);
 
   if (!agent) {
     return c.json({ error: 'Agent not found' }, 404);
@@ -1521,9 +1296,9 @@ agentRoutes.get('/:agentId/passport', (c) => {
   return c.json(agent.passport);
 });
 
-agentRoutes.get('/:agentId/card', (c) => {
+agentRoutes.get('/:agentId/card', async (c) => {
   const agentId = decodeURIComponent(c.req.param('agentId'));
-  const agent = agents.get(agentId);
+  const agent = await getAgentStore().get(agentId);
 
   if (!agent) {
     return c.json({ error: 'Agent not found' }, 404);

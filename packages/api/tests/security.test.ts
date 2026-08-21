@@ -78,7 +78,7 @@ const agentPayload = {
 describe('API security hardening', () => {
   beforeEach(async () => {
     await __resetAuthStateForTests();
-    __resetAgentsForTests();
+    await __resetAgentsForTests();
     __resetRateLimitersForTests();
     delete process.env.AGENT_OPERATOR_ACTIONS_ENABLED;
     delete process.env.AGENT_OPERATOR_ALLOWLIST;
