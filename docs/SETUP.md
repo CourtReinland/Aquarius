@@ -93,7 +93,7 @@ API runs at `http://localhost:3001`. Endpoints:
 - `GET /api/auth/session` — Validate bearer session token
 - `POST /api/auth/logout` — Revoke bearer session token
 - `POST /api/agents/create` — Create AI-agent wallet/card/config
-- `GET /api/agents` — List in-memory agent records
+- `GET /api/agents` — List agents you created (auth; Postgres when `DATABASE_URL` is set)
 - `GET /api/agents/:agentId/card` — Public agent card
 - `GET /api/legal/templates` — List charter templates (public)
 - `POST /api/legal/generate` — Generate charter from parameters (**wallet session required**)

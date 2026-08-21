@@ -140,8 +140,8 @@ Aquarius agents are intended to be first-class community members. The current bu
 - `POST /api/agents/create` endpoint.
 - Generated EOA wallet per agent.
 - Public agent card with `agentId`, role, capabilities, community address, payment address, A2A/MCP endpoint placeholders, and prompt hash.
-- Private prompt/runtime config stored by the API process.
-- Optional encrypted private key storage if `AGENT_KEY_ENCRYPTION_SECRET` is set.
+- Private prompt/runtime config and public cards persist in Postgres when `DATABASE_URL` is set; otherwise the JSON/in-memory bridge is used.
+- Optional encrypted private key storage if `AGENT_KEY_ENCRYPTION_SECRET` is set (ciphertext only; never logged or returned).
 - Optional on-chain registration through `Community.registerAIAgent` if operator env vars are set.
 - Agent creation always requires a signed wallet session; creator attribution is bound to that session.
 - Operator funding / on-chain registration are gated by `AGENT_OPERATOR_ACTIONS_ENABLED` (and optional allowlist) with an `AGENT_MAX_INITIAL_FUNDING_ETH` cap.
@@ -151,8 +151,7 @@ Aquarius agents are intended to be first-class community members. The current bu
 
 ### Planned Next
 
-- PostgreSQL + Drizzle persistence.
-- KMS, Lit Protocol, or ERC-4337 smart accounts for agent keys.
+- KMS, Lit Protocol, or ERC-4337 smart accounts for agent keys (keys remain encrypted-at-rest in Postgres/JSON, not in KMS).
 - Isolated agent runtime workers.
 - Wire the app to the API indexer stub (`GET /api/indexer/*`); expand beyond factory/community/governance events.
 - Real A2A/MCP handlers.
@@ -221,7 +220,7 @@ The API is a Hono server in `packages/api`.
 | `AQUARIUS_AUTH_SECRET` | HMAC secret for API session tokens (**required in production**) |
 | `AQUARIUS_ENV` / `NODE_ENV` | Set to `production` to enforce auth-secret boot checks |
 | `AQUARIUS_CORS_ORIGINS` | Comma-separated CORS allowlist (dev defaults to localhost Expo/web) |
-| `AGENT_KEY_ENCRYPTION_SECRET` | Encrypts generated agent private keys before storage |
+| `AGENT_KEY_ENCRYPTION_SECRET` | Encrypts generated agent private keys before durable storage (Postgres or JSON bridge) |
 | `AGENT_OPERATOR_ACTIONS_ENABLED` | Opt-in for operator funding / on-chain registration (`true` to enable) |
 | `AGENT_OPERATOR_ALLOWLIST` | Optional wallets allowed to request operator-funded actions |
 | `AGENT_MAX_INITIAL_FUNDING_ETH` | Cap for agent `initialFundingEth` (default `0.01`) |
@@ -229,7 +228,7 @@ The API is a Hono server in `packages/api`.
 | `AQUARIUS_RPC_URL` or `RPC_URL` | RPC URL for API-side transactions and ERC-1271 SIWE verification |
 | `AQUARIUS_PUBLIC_API_BASE_URL` | Public base URL used in generated agent cards |
 | `AGENT_RUNTIME_BASE_URL` | Future A2A/MCP runtime base URL |
-| `DATABASE_URL` | Postgres URL for durable auth sessions/challenges, Agent Foundry schema, and indexer cursors/events. Unset = in-memory fallback |
+| `DATABASE_URL` | Postgres URL for durable auth sessions/challenges, agent records (cards, metadata, encrypted keys), and indexer cursors/events. Unset = JSON/in-memory fallback |
 | `EXPO_PUBLIC_AQUARIUS_API_BASE_URL` | Mobile bundle API target override |
 | `EXPO_PUBLIC_AQUARIUS_DEV_SIGNER` | Set to `1` to allow opt-in Anvil shared-key signing in the mobile UI |
 | `EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID` | Reown / WalletConnect Cloud project ID. Unset hides the WalletConnect button |
@@ -322,7 +321,7 @@ The Android release APK was built and installed on a physical Pixel 3a.
 
 - Web app is still prototype-only; mobile is the active client.
 - Desktop app is a placeholder.
-- API persistence: auth sessions/challenges are durable in Postgres when `DATABASE_URL` is set; agents still use the JSON bridge store (Drizzle schema is ready).
+- API persistence: auth sessions/challenges and agent records are durable in Postgres when `DATABASE_URL` is set. Remaining for keys: KMS / Lit / ERC-4337 (still encrypted-at-rest in the DB, not KMS). When `DATABASE_URL` is unset, agents keep the JSON/in-memory bridge.
 - A stub on-chain event indexer exists at `GET /api/indexer/communities` and `GET /api/indexer/health` (catch-up + `watchContractEvent`, Postgres when `DATABASE_URL` is set). The mobile/web apps still read the chain directly; remaining work is wiring clients to this API.
 - Agent runtime is not autonomous yet.
 - WalletConnect v2 is wired into mobile `getWalletClient()` for SIWE and contract writes. Coinbase Wallet SDK, hardware wallets, and ERC-4337 onboarding are still later.

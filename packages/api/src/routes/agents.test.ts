@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import { agentPermissionClassIndex, agentRoutes, resetAgentStoreForTests } from './agents';
+import { agentPermissionClassIndex, agentRoutes, resetAgentStoreForTests, __resetAgentsForTests } from './agents';
 import { authRoutes, __resetAuthStateForTests } from './auth';
 
 function createTestApp() {
@@ -50,6 +50,7 @@ async function signIn(app: ReturnType<typeof createTestApp>, privateKey: `0x${st
 
 beforeEach(async () => {
   await __resetAuthStateForTests();
+  await __resetAgentsForTests();
 });
 
 describe('agent permission class mapping', () => {
@@ -122,6 +123,13 @@ describe('agent routes passport creation', () => {
       const listBody = await listResponse.json();
       expect(listBody.total).toBe(1);
       expect(listBody.agents[0].agentId).toBe(created.agent.agentId);
+
+      const cardResponse = await secondApp.request(`/api/agents/${agentId}/card`);
+      expect(cardResponse.status).toBe(200);
+      const card = await cardResponse.json();
+      expect(card.name).toBe('Archivist Otter');
+      expect(card.promptHash).toBe(created.agent.promptHash);
+      expect(JSON.stringify(card)).not.toContain('Remember public community events.');
     } finally {
       resetAgentStoreForTests(null);
       rmSync(tempDir, { recursive: true, force: true });

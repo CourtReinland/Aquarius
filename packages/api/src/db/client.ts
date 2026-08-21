@@ -12,8 +12,9 @@ export function isDatabaseConfigured(): boolean {
 }
 
 /**
- * Shared Drizzle client for Agent Foundry and durable auth.
- * Returns null when DATABASE_URL is unset so callers can fall back to memory.
+ * Shared Drizzle client for Agent Foundry (agents), durable auth, and indexer.
+ * Returns null when DATABASE_URL is unset so callers can fall back to
+ * JSON/in-memory stores.
  */
 export function getDb(): AquariusDb | null {
   const url = process.env.DATABASE_URL?.trim();

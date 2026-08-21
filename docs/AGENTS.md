@@ -36,7 +36,7 @@ An agent card contains public metadata only:
 - A2A and MCP endpoint URLs
 - `promptHash`
 
-The full prompt template is stored privately by the API process. The private key is never returned to the client.
+The full prompt template is stored privately (Postgres when `DATABASE_URL` is set, otherwise the JSON/in-memory bridge). Encrypted key material stays encrypted at rest and is never logged or returned to the client.
 
 ## API
 
@@ -89,7 +89,9 @@ Environment variables:
 
 | Variable | Purpose |
 |---|---|
-| `AGENT_KEY_ENCRYPTION_SECRET` | Encrypts generated agent private keys before storing them in memory. Without it, the API creates the wallet but does not persist the private key. |
+| `AGENT_KEY_ENCRYPTION_SECRET` | Encrypts generated agent private keys before durable storage (Postgres or JSON). Without it, the API creates the wallet but does not persist the private key. |
+| `DATABASE_URL` | Postgres for durable agent records (cards, metadata, encrypted keys, prompt hash, creator, community). Unset keeps the JSON/in-memory bridge. |
+| `AGENT_STORE_FILE` | JSON bridge path used only when `DATABASE_URL` is unset. |
 | `AGENT_OPERATOR_ACTIONS_ENABLED` | Must be `true` to allow `initialFundingEth > 0` or `registerOnChain: true`. Default off. |
 | `AGENT_OPERATOR_ALLOWLIST` | Optional comma-separated wallets permitted to request operator-funded actions. |
 | `AGENT_MAX_INITIAL_FUNDING_ETH` | Cap for `initialFundingEth` (default `0.01`). |
@@ -101,11 +103,10 @@ Environment variables:
 
 ## Production Path
 
-The next production step is persistence and runtime isolation:
+Agent records are durable in PostgreSQL with Drizzle when `DATABASE_URL` is set. Remaining production work:
 
-1. Move agent records from in-memory storage to PostgreSQL with Drizzle.
-2. Store keys in KMS, Lit Protocol, or an ERC-4337 smart account provider rather than process memory.
-3. Add an agent-orchestrator worker that starts a sandboxed runtime per agent.
-4. Use `viem.watchContractEvent` for proposals, dividends, token transfers, and agent registry events.
-5. Add A2A/MCP handlers so humans and agents can address agent members directly.
-6. Add ERC-4337 account abstraction for sponsored gas and recovery.
+1. Store keys in KMS, Lit Protocol, or an ERC-4337 smart account provider. Encrypted private keys in Postgres/JSON are ciphertext at rest, not KMS-managed.
+2. Add an agent-orchestrator worker that starts a sandboxed runtime per agent.
+3. Use `viem.watchContractEvent` for proposals, dividends, token transfers, and agent registry events.
+4. Add A2A/MCP handlers so humans and agents can address agent members directly.
+5. Add ERC-4337 account abstraction for sponsored gas and recovery.
