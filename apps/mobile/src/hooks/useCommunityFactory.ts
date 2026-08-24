@@ -96,6 +96,7 @@ export async function getCommunityCount(
 
 /**
  * Read all community addresses from the factory.
+ * Explorer lists prefer GET /api/indexer/communities and use this as fallback.
  */
 export async function getAllCommunities(
   factoryAddress: Address

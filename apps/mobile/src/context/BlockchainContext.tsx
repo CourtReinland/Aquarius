@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect } from 'react';
 import { useBlockchainData } from '../hooks/useBlockchainData';
 import { useWalletStore } from '../hooks/useWalletStore';
+import type { CommunityListSource } from '../api/indexer';
 import type { MyCommunity, DiscoveredCommunity, OnChainProposal, UserProfile } from '../hooks/useBlockchainData';
 import { defaultChain } from '../config/chains';
 import { hydrateSigningKey } from '../wallet/signer';
@@ -14,6 +15,7 @@ interface BlockchainContextValue {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  communityListSource: CommunityListSource | null;
   walletAddress: `0x${string}` | null;
   isConnected: boolean;
 }
@@ -26,6 +28,7 @@ const BlockchainContext = createContext<BlockchainContextValue>({
   loading: false,
   error: null,
   refresh: async () => {},
+  communityListSource: null,
   walletAddress: null,
   isConnected: false,
 });
