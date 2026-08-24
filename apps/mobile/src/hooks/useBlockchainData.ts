@@ -5,12 +5,21 @@ import {
   formatEther,
   type Address,
 } from 'viem';
+import {
+  indexedCommunityMap,
+  mergeCommunityAddresses,
+  tryLoadIndexedCommunities,
+  type CommunityListSource,
+  type IndexedCommunity,
+} from '../api/indexer';
+import { communityAbi, governanceModuleAbi } from '../config/abis';
 import { defaultChain, CONTRACT_ADDRESSES } from '../config/chains';
-import { communityFactoryAbi, communityAbi, governanceModuleAbi } from '../config/abis';
+import { getAllCommunities } from './useCommunityFactory';
 
 /**
- * Central hook that fetches all blockchain state relevant to the connected user.
- * No placeholder data — everything comes from the chain.
+ * Central hook that fetches wallet-scoped community and governance state.
+ * Community addresses prefer the public indexer stub, then fall back to
+ * factory `getAllCommunities`. Membership, proposal, and write paths stay on-chain.
  */
 
 const publicClient = createPublicClient({
@@ -75,9 +84,10 @@ export function useBlockchainData(walletAddress: Address | null) {
   const [proposals, setProposals] = useState<OnChainProposal[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [communityListSource, setCommunityListSource] = useState<CommunityListSource | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!walletAddress || !contracts?.communityFactory) return;
+    if (!walletAddress) return;
 
     setLoading(true);
     setError(null);
@@ -86,18 +96,17 @@ export function useBlockchainData(walletAddress: Address | null) {
       // 1. Fetch ETH balance
       const ethBalance = await publicClient.getBalance({ address: walletAddress });
 
-      // 2. Fetch all community addresses from factory
-      const allAddresses = await publicClient.readContract({
-        address: contracts.communityFactory!,
-        abi: communityFactoryAbi,
-        functionName: 'getAllCommunities',
-      }) as Address[];
+      // 2. Prefer indexer community list; fall back to factory scan
+      const { addresses: allAddresses, indexedByAddress, source } =
+        await resolveCommunityAddresses(contracts?.communityFactory ?? null);
+      setCommunityListSource(source);
 
       // 3. For each community, check if user is a member and get details
       const myComms: MyCommunity[] = [];
       const discovered: DiscoveredCommunity[] = [];
 
       for (const addr of allAddresses) {
+        const indexed = indexedByAddress.get(addr.toLowerCase());
         try {
           const [info, isMember, isFounder, memberCount, founderCount, aiAgentCount] = await Promise.all([
             publicClient.readContract({ address: addr, abi: communityAbi, functionName: 'info' }),
@@ -133,6 +142,11 @@ export function useBlockchainData(walletAddress: Address | null) {
           discovered.push(commData);
         } catch (e) {
           console.warn('[Data] Failed to read community', addr, e);
+          const fallback = communityFromIndexer(addr, walletAddress, indexed);
+          if (fallback) {
+            discovered.push(fallback.discovered);
+            if (fallback.membership) myComms.push(fallback.membership);
+          }
         }
       }
 
@@ -224,5 +238,82 @@ export function useBlockchainData(walletAddress: Address | null) {
     loading,
     error,
     refresh,
+    communityListSource,
+  };
+}
+
+async function resolveCommunityAddresses(factoryAddress: Address | null): Promise<{
+  addresses: Address[];
+  indexedByAddress: Map<string, IndexedCommunity>;
+  source: CommunityListSource | null;
+}> {
+  const [indexed, factoryResult] = await Promise.all([
+    tryLoadIndexedCommunities(),
+    factoryAddress
+      ? getAllCommunities(factoryAddress)
+          .then((addresses) => ({ addresses, error: null as unknown }))
+          .catch((error: unknown) => {
+            console.warn('[Data] Factory community list failed', error);
+            return { addresses: [] as Address[], error };
+          })
+      : Promise.resolve({ addresses: [] as Address[], error: null as unknown }),
+  ]);
+  const factoryAddresses = factoryResult.addresses;
+  const factoryError = factoryResult.error;
+  const indexedByAddress = indexedCommunityMap(indexed ?? []);
+
+  if (indexed && indexed.length > 0) {
+    return {
+      addresses: mergeCommunityAddresses(indexed, factoryAddresses),
+      indexedByAddress,
+      source: factoryAddresses.length > 0 ? 'indexer+chain' : 'indexer',
+    };
+  }
+
+  if (factoryAddresses.length > 0 || !factoryError) {
+    return {
+      addresses: factoryAddresses,
+      indexedByAddress,
+      source: factoryAddresses.length > 0 ? 'chain' : null,
+    };
+  }
+
+  throw factoryError instanceof Error
+    ? factoryError
+    : new Error('Community list unavailable from indexer and factory');
+}
+
+function communityFromIndexer(
+  address: Address,
+  walletAddress: Address,
+  indexed: IndexedCommunity | undefined
+): { discovered: DiscoveredCommunity; membership?: MyCommunity } | null {
+  if (!indexed) return null;
+
+  const isFounder = indexed.founders.some(
+    (founder) => founder.toLowerCase() === walletAddress.toLowerCase()
+  );
+
+  const discovered: DiscoveredCommunity = {
+    address,
+    name: indexed.name,
+    memberCount: indexed.founders.length,
+    isMember: isFounder,
+  };
+
+  if (!isFounder) return { discovered };
+
+  return {
+    discovered,
+    membership: {
+      ...discovered,
+      isFounder: true,
+      founderCount: indexed.founders.length,
+      aiAgentCount: 0,
+      charterIpfsHash: '',
+      legalFramework: '',
+      jurisdiction: '',
+      createdAt: indexed.deployedAtTimestamp ?? 0,
+    },
   };
 }

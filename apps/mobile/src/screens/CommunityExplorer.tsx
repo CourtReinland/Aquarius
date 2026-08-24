@@ -128,7 +128,7 @@ export function CommunityExplorer() {
       {loading && (
         <View style={styles.loadingRow}>
           <ActivityIndicator color="#4ECDC4" size="small" />
-          <Text style={styles.loadingText}>Fetching from blockchain...</Text>
+          <Text style={styles.loadingText}>Fetching communities...</Text>
         </View>
       )}
 

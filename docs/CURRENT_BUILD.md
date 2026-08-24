@@ -33,7 +33,7 @@ No centralized username/password server is required for the root identity model.
 | Dividends | Proportional token dividend distribution for institution shareholders | On-chain |
 | Alliances | Propose, accept, decline, dissolve inter-community alliances | On-chain |
 | Legal docs | Generate charters/bylaws with Grok (xAI) from community parameters; Anthropic optional fallback | API |
-| Explorer UI | 3D/2D community explorer and membership dashboard | Mobile app + chain reads |
+| Explorer UI | 3D/2D community explorer and membership dashboard | Mobile app + indexer with chain fallback |
 | Android deployment | Release APK builds and installs on a connected Pixel 3a | Native Android project |
 
 ## Repository Structure
@@ -72,7 +72,8 @@ The mobile app is the most complete client implementation. It runs as a React Na
 
 ### Mobile Data Flow
 
-- `BlockchainContext` hydrates a WalletConnect session when present, otherwise the signing key from SecureStore, then calls `useBlockchainData` for wallet-scoped chain reads.
+- `BlockchainContext` hydrates a WalletConnect session when present, otherwise the signing key from SecureStore, then calls `useBlockchainData` for wallet-scoped reads.
+- `useBlockchainData` prefers `GET /api/indexer/communities` when `GET /api/indexer/health` reports a processed block or a configured RPC. Timeouts, 5xx, empty, or idle/unconfigured health fall back to factory `getAllCommunities`. If both the indexer and factory respond, addresses are unioned so a just-founded community appears before the indexer catches up. Membership, proposals, and all writes stay on-chain.
 - `useWalletStore` persists Passport metadata (session + linked wallets) in AsyncStorage — never the private key.
 - `WalletConnect` creates/imports a personal local wallet, connects WalletConnect v2 when `EXPO_PUBLIC_WALLETCONNECT_PROJECT_ID` is set (or opt-in Anvil account #0 when `EXPO_PUBLIC_AQUARIUS_DEV_SIGNER=1`), then signs in through the auth API.
 - `useWalletAuth` performs the SIWE-style challenge/verify flow with the same `getWalletClient()` used for txs (WC session when connected, otherwise the local key).
@@ -154,7 +155,7 @@ Aquarius agents are intended to be first-class community members. The current bu
 - PostgreSQL + Drizzle persistence.
 - KMS, Lit Protocol, or ERC-4337 smart accounts for agent keys.
 - Isolated agent runtime workers.
-- Wire the app to the API indexer stub (`GET /api/indexer/*`); expand beyond factory/community/governance events.
+- Wire the web app to the API indexer stub; expand beyond factory/community/governance events.
 - Real A2A/MCP handlers.
 - Governance-scoped permissioning for agent spending/voting/trading.
 
@@ -323,7 +324,7 @@ The Android release APK was built and installed on a physical Pixel 3a.
 - Web app is still prototype-only; mobile is the active client.
 - Desktop app is a placeholder.
 - API persistence: auth sessions/challenges are durable in Postgres when `DATABASE_URL` is set; agents still use the JSON bridge store (Drizzle schema is ready).
-- A stub on-chain event indexer exists at `GET /api/indexer/communities` and `GET /api/indexer/health` (catch-up + `watchContractEvent`, Postgres when `DATABASE_URL` is set). The mobile/web apps still read the chain directly; remaining work is wiring clients to this API.
+- A stub on-chain event indexer exists at `GET /api/indexer/communities` and `GET /api/indexer/health` (catch-up + `watchContractEvent`, Postgres when `DATABASE_URL` is set). Mobile explorer/membership lists prefer the indexer and fall back to factory chain reads if the indexer is empty, down, or unconfigured. Remaining work: wire the web app, and expand beyond factory/community/governance events.
 - Agent runtime is not autonomous yet.
 - WalletConnect v2 is wired into mobile `getWalletClient()` for SIWE and contract writes. Coinbase Wallet SDK, hardware wallets, and ERC-4337 onboarding are still later.
 - ERC-1271 smart-wallet SIWE verification is supported when `AQUARIUS_RPC_URL` or `RPC_URL` is set; undeployed/counterfactual accounts are still follow-ups.
