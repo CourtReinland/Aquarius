@@ -14,6 +14,7 @@ describe('Aquarius API discovery', () => {
     expect(body.routes.health).toBe('/health');
     expect(body.routes.agents).toBe('/api/agents');
     expect(body.routes.createAgent).toBe('/api/agents/create');
+    expect(body.routes.legalPin).toBe('/api/legal/pin');
     expect(body.routes.indexerHealth).toBe('/api/indexer/health');
     expect(body.routes.indexerCommunities).toBe('/api/indexer/communities');
   });

@@ -96,12 +96,29 @@ API runs at `http://localhost:3001`. Endpoints:
 - `GET /api/agents` — List in-memory agent records
 - `GET /api/agents/:agentId/card` — Public agent card
 - `GET /api/legal/templates` — List charter templates (public)
-- `POST /api/legal/generate` — Generate charter from parameters (**wallet session required**)
+- `POST /api/legal/generate` — Generate charter from parameters (**wallet session required**); returns `{ cid, uri }` when IPFS is configured
 - `POST /api/legal/summarize` — Summarize existing charter (**wallet session required**)
+- `POST /api/legal/pin` — Pin already-generated markdown to IPFS (**wallet session required**)
 - `POST /api/blue/chat` — Ask Blue (**wallet session required**)
 - `GET /api/blue/status` — `{ available: boolean }` only
 - `GET /api/communities` — Placeholder community list
 - `POST /api/communities` — Placeholder community creation facade
+
+## IPFS Pinning
+
+Optional. Charters only live in the API response and on the client until pinned.
+
+```bash
+# Local Kubo (preferred)
+export IPFS_API_URL=http://127.0.0.1:5001
+
+# Or a hosted HTTP pin API (Pinata / web3.storage-style)
+# export IPFS_API_URL=https://api.pinata.cloud/pinning/pinFileToIPFS
+# export IPFS_PINNING_TOKEN=your_bearer_token
+# export IPFS_GATEWAY_URL=https://ipfs.io/ipfs/
+```
+
+If `IPFS_API_URL` is unset, generate still succeeds with `cid: null` and a warning. The next client step is writing the CID to the on-chain community charter hash — this API does not submit that transaction.
 
 ## Deploying Smart Contracts
 

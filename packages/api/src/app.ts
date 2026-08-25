@@ -48,6 +48,7 @@ export function createApp() {
       health: '/health',
       communities: '/api/communities',
       legalTemplates: '/api/legal/templates',
+      legalPin: '/api/legal/pin',
       agents: '/api/agents',
       createAgent: '/api/agents/create',
       authChallenge: '/api/auth/challenge',

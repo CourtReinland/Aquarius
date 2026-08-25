@@ -11,11 +11,19 @@ import { getSessionFromAuthorization, type SessionRecord } from './auth.js';
 import {
   legalGenerateAddressLimiter,
   legalGenerateIpLimiter,
+  legalPinAddressLimiter,
+  legalPinIpLimiter,
   legalSummarizeAddressLimiter,
   legalSummarizeIpLimiter,
   rateLimitResponse,
 } from '../lib/rate-limit.js';
 import { clientIp } from '../lib/request.js';
+import {
+  isIpfsConfigured,
+  pinMarkdownToIpfs,
+  safePinFilename,
+  tryPinMarkdownToIpfs,
+} from '../lib/ipfs.js';
 
 export const legalRoutes = new Hono();
 
@@ -50,6 +58,11 @@ const communityParamsSchema = z.object({
 const summarizeSchema = z.object({
   charter: z.string().min(1).max(MAX_CHARTER_CHARS),
   communityName: z.string().min(1).max(MAX_COMMUNITY_NAME_CHARS),
+});
+
+const pinSchema = z.object({
+  markdown: z.string().min(1).max(MAX_CHARTER_CHARS),
+  filename: z.string().min(1).max(120).optional(),
 });
 
 type SessionGate =
@@ -129,9 +142,15 @@ legalRoutes.post('/generate', async (c) => {
     // Validate completeness
     const validation = validateDocument(result.markdown);
 
+    // Optional pin: never fail generation if IPFS is unset or the pin call fails.
+    const pin = await tryPinMarkdownToIpfs(result.markdown);
+
     return c.json({
       success: true,
       document: result.markdown,
+      cid: pin.cid,
+      uri: pin.uri,
+      ...(pin.warning ? { warning: pin.warning } : {}),
       metadata: {
         model: result.model,
         inputTokens: result.inputTokens,
@@ -225,6 +244,77 @@ legalRoutes.post('/summarize', async (c) => {
         message: 'Unable to summarize charter. Try again later.',
       },
       500
+    );
+  }
+});
+
+/**
+ * POST /api/legal/pin
+ * Pin already-generated charter markdown to IPFS.
+ * Requires a valid Aquarius wallet session. Rate-limited (summarize class).
+ * Bounded to the same charter size cap as summarize.
+ */
+legalRoutes.post('/pin', async (c) => {
+  try {
+    const auth = await requireSession(c);
+    if (!auth.ok) return auth.response;
+
+    const ip = clientIp(c);
+    const addressKey = auth.session.address.toLowerCase();
+
+    const ipLimit = legalPinIpLimiter.check(`legal-pin:ip:${ip}`);
+    if (!ipLimit.allowed) {
+      return rateLimitResponse(
+        c,
+        ipLimit.retryAfterSeconds,
+        'Legal pin rate limit exceeded. Wait before retrying.'
+      );
+    }
+
+    const addressLimit = legalPinAddressLimiter.check(`legal-pin:addr:${addressKey}`);
+    if (!addressLimit.allowed) {
+      return rateLimitResponse(
+        c,
+        addressLimit.retryAfterSeconds,
+        'Legal pin rate limit exceeded. Wait before retrying.'
+      );
+    }
+
+    const { markdown, filename } = pinSchema.parse(await c.req.json());
+
+    if (!isIpfsConfigured()) {
+      return c.json(
+        {
+          error: 'IPFS not configured',
+          message: 'Set IPFS_API_URL to pin documents. Generation still works without it.',
+          cid: null,
+          uri: null,
+        },
+        503
+      );
+    }
+
+    const pinned = await pinMarkdownToIpfs(markdown, safePinFilename(filename));
+    return c.json({
+      success: true,
+      cid: pinned.cid,
+      uri: pinned.uri,
+    });
+  } catch (error: any) {
+    if (error?.name === 'ZodError') {
+      return c.json(
+        { error: 'Invalid parameters', details: error.issues },
+        400
+      );
+    }
+    // Do not log document bodies — message only.
+    console.error('[legal/pin] failed:', error?.message ?? error);
+    return c.json(
+      {
+        error: 'Pin failed',
+        message: 'Unable to pin document to IPFS. Try again later.',
+      },
+      502
     );
   }
 });

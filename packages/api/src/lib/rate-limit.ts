@@ -95,6 +95,10 @@ export const legalGenerateAddressLimiter = new SlidingWindowRateLimiter(3, 15 * 
 export const legalSummarizeIpLimiter = new SlidingWindowRateLimiter(20, 15 * 60_000);
 export const legalSummarizeAddressLimiter = new SlidingWindowRateLimiter(10, 15 * 60_000);
 
+/** Pin is cheaper than generate (no model tokens) — slightly looser than generate. */
+export const legalPinIpLimiter = new SlidingWindowRateLimiter(20, 15 * 60_000);
+export const legalPinAddressLimiter = new SlidingWindowRateLimiter(10, 15 * 60_000);
+
 export const blueChatIpLimiter = new SlidingWindowRateLimiter(40, 60_000);
 export const blueChatAddressLimiter = new SlidingWindowRateLimiter(20, 60_000);
 
@@ -106,6 +110,8 @@ export function __resetRateLimitersForTests() {
   legalGenerateAddressLimiter.reset();
   legalSummarizeIpLimiter.reset();
   legalSummarizeAddressLimiter.reset();
+  legalPinIpLimiter.reset();
+  legalPinAddressLimiter.reset();
   blueChatIpLimiter.reset();
   blueChatAddressLimiter.reset();
 }
