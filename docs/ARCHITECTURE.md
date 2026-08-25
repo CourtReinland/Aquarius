@@ -201,3 +201,12 @@ Each template modifies the system prompt to generate documents in a specific leg
 - **U.S. Constitution** — Preamble, Articles, Bill of Rights, Amendments
 - **Magna Carta** — Due process, limits on authority, property rights
 - **Blackfeet Tribal** — Council governance, stewardship, restorative justice
+
+## IPFS Pinning
+
+Generated legal documents are pinned over HTTP when `IPFS_API_URL` is set (local Kubo `/api/v0/add` or a Pinata/web3.storage-style endpoint plus optional `IPFS_PINNING_TOKEN`).
+
+- `POST /api/legal/generate` returns `{ cid, uri }` after a successful generation, or `cid: null` plus a warning when pinning is unset or fails (generation still succeeds).
+- `POST /api/legal/pin` pins already-generated markdown (session required, same size bound as summarize).
+
+The community contract already stores a charter hash. Writing the returned CID on-chain is the next client step; this API slice does not send that transaction. Document bodies are never logged.

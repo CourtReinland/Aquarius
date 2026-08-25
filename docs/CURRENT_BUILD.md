@@ -242,7 +242,7 @@ The API is a Hono server in `packages/api`.
 
 Paid AI features use **Grok (xAI) as the primary provider** when `XAI_API_KEY` is set. Anthropic Claude is an optional fallback. Legal generation defaults to `grok-4` for long-form charters; Blue uses a faster Grok model for short replies.
 
-**Session required:** `POST /api/legal/generate`, `POST /api/legal/summarize`, and `POST /api/blue/chat` all require a valid Aquarius wallet session (`Authorization: Bearer …`). `GET /api/legal/templates` stays public. `GET /api/blue/status` only returns `{ available: boolean }` (does not advertise which provider keys are set).
+**Session required:** `POST /api/legal/generate`, `POST /api/legal/summarize`, `POST /api/legal/pin`, and `POST /api/blue/chat` all require a valid Aquarius wallet session (`Authorization: Bearer …`). `GET /api/legal/templates` stays public. `GET /api/blue/status` only returns `{ available: boolean }` (does not advertise which provider keys are set).
 
 These paid AI routes are also rate-limited in-process per IP + session address (stricter for legal generate than Blue chat).
 
@@ -253,7 +253,21 @@ Templates:
 - Magna Carta inspired.
 - Blackfeet Tribal Constitution inspired.
 
-Generated docs are displayed in the mobile Legal Doc Viewer. IPFS pinning is planned; the on-chain community currently stores a charter hash field.
+Generated docs are displayed in the mobile Legal Doc Viewer. See **IPFS Pinning** below for optional CID return; the on-chain community already has a charter hash field for the next client write.
+
+## IPFS Pinning
+
+Without pinning, generated charters exist only in the API response and on the client. A process restart or a lost device drops the only copy, and there is no content-addressed hash to store on-chain.
+
+When `IPFS_API_URL` is set, `POST /api/legal/generate` pins the markdown after a successful generation and returns `{ cid, uri }`. `POST /api/legal/pin` pins already-generated markdown (50k-character bound, same class as summarize). Both require a wallet session.
+
+- Local Kubo: `IPFS_API_URL=http://127.0.0.1:5001` (POST `/api/v0/add?pin=true`)
+- Hosted pinning: set `IPFS_API_URL` to the HTTP pin endpoint and `IPFS_PINNING_TOKEN` for Bearer auth
+- Optional `IPFS_GATEWAY_URL` builds an HTTPS gateway `uri`; otherwise `uri` is `ipfs://<cid>`
+
+If pinning is unset or the pin HTTP call fails, generate still succeeds with `cid: null` and a warning. Document bodies are never logged.
+
+**Next client step:** write the returned CID to the community `charterIpfsHash` field on-chain. This API slice does not submit that transaction.
 
 ## Local Development Workflow
 
@@ -328,5 +342,5 @@ The Android release APK was built and installed on a physical Pixel 3a.
 - WalletConnect v2 is wired into mobile `getWalletClient()` for SIWE and contract writes. Coinbase Wallet SDK, hardware wallets, and ERC-4337 onboarding are still later.
 - ERC-1271 smart-wallet SIWE verification is supported when `AQUARIUS_RPC_URL` or `RPC_URL` is set; undeployed/counterfactual accounts are still follow-ups.
 - ERC-4337 account abstraction is planned for production onboarding and agents.
-- IPFS pinning flow for generated legal documents is planned.
+- Generated legal documents can be pinned to IPFS (`cid`/`uri` on generate, `POST /api/legal/pin`). Clients still need to write the CID to the on-chain charter hash field.
 - Community API CRUD route is still a placeholder facade.
