@@ -140,22 +140,13 @@ contract ReentrantDividendToken {
     }
 }
 
-/// @dev Fake community used to probe AllianceModule callback reentrancy.
-///      `initialized()` / `isFounder()` look like Community; isFounder can
-///      reenter accept or decline on the same alliance id.
-contract ReentrantAllianceCommunity {
+/// @dev Duck-typed community: `initialized()` / `isFounder()` match Community's
+///      public getters. Used to probe spoofing and whether a writing callback
+///      can run under AllianceModule's STATICCALL to `isFounder`.
+contract HostileAllianceCommunity {
     AllianceModule public alliance;
     uint256 public attackId;
-    uint256 public reenterAttempts;
-    uint256 public reenterSucceeded;
-
-    enum Attack {
-        None,
-        ReenterAccept,
-        ReenterDeclineDuringAccept
-    }
-
-    Attack public attack;
+    bool public writeOnFounderCheck;
 
     function initialized() external pure returns (bool) {
         return true;
@@ -165,29 +156,15 @@ contract ReentrantAllianceCommunity {
         alliance = _alliance;
     }
 
-    function enableAcceptReenter(uint256 id) external {
+    function enableWriteOnFounderCheck(uint256 id) external {
         attackId = id;
-        attack = Attack.ReenterAccept;
-    }
-
-    function enableDeclineDuringAccept(uint256 id) external {
-        attackId = id;
-        attack = Attack.ReenterDeclineDuringAccept;
+        writeOnFounderCheck = true;
     }
 
     function isFounder(address) external returns (bool) {
-        if (attack == Attack.ReenterAccept) {
-            attack = Attack.None;
-            reenterAttempts++;
-            try alliance.acceptAlliance(attackId) {
-                reenterSucceeded++;
-            } catch {}
-        } else if (attack == Attack.ReenterDeclineDuringAccept) {
-            attack = Attack.None;
-            reenterAttempts++;
-            try alliance.declineAlliance(attackId) {
-                reenterSucceeded++;
-            } catch {}
+        if (writeOnFounderCheck) {
+            writeOnFounderCheck = false;
+            try alliance.acceptAlliance(attackId) {} catch {}
         }
         return true;
     }
@@ -722,46 +699,44 @@ contract SecurityHardeningTest is Test {
         assertEq(address(alliance).balance, 0);
     }
 
-    function test_AllianceAcceptReentrancyCannotDoublePush() public {
-        ReentrantAllianceCommunity hostile = new ReentrantAllianceCommunity();
-        hostile.configure(alliance);
+    function test_AllianceHostileTargetCanSpoofFounderOnce() public {
+        HostileAllianceCommunity hostile = new HostileAllianceCommunity();
 
         vm.prank(alice);
         uint256 id = alliance.proposeAlliance(communityAddr, address(hostile), "", 0, true, false);
-        hostile.enableAcceptReenter(id);
 
-        // Any caller is treated as founder of the hostile target.
+        // Duck-typed target: any caller is treated as a founder of B.
         alliance.acceptAlliance(id);
-
-        assertEq(hostile.reenterAttempts(), 1);
-        assertEq(hostile.reenterSucceeded(), 0);
 
         (,, AllianceModule.AllianceStatus status,,,) = alliance.getAlliance(id);
         assertTrue(status == AllianceModule.AllianceStatus.Active);
 
         uint256[] memory aList = alliance.getCommunityAlliances(communityAddr);
         uint256[] memory bList = alliance.getCommunityAlliances(address(hostile));
-        assertEq(aList.length, 1, "double-push on community A");
-        assertEq(bList.length, 1, "double-push on hostile B");
+        assertEq(aList.length, 1);
+        assertEq(bList.length, 1);
+        assertEq(aList[0], id);
         assertTrue(alliance.isAllied(communityAddr, address(hostile)));
     }
 
-    function test_AllianceAcceptReentrancyCannotFlipDeclineToActive() public {
-        ReentrantAllianceCommunity hostile = new ReentrantAllianceCommunity();
+    function test_AllianceIsFounderStaticcallBlocksWriteReenter() public {
+        HostileAllianceCommunity hostile = new HostileAllianceCommunity();
         hostile.configure(alliance);
 
         vm.prank(alice);
         uint256 id = alliance.proposeAlliance(communityAddr, address(hostile), "", 0, true, false);
-        hostile.enableDeclineDuringAccept(id);
+        hostile.enableWriteOnFounderCheck(id);
 
+        // Community.isFounder is a public getter, so AllianceModule issues a
+        // STATICCALL. A writing callback (including reenter) reverts the check
+        // instead of mutating alliance state.
+        vm.expectRevert();
         alliance.acceptAlliance(id);
 
-        assertEq(hostile.reenterAttempts(), 1);
-        assertEq(hostile.reenterSucceeded(), 0);
-
         (,, AllianceModule.AllianceStatus status,,,) = alliance.getAlliance(id);
-        assertTrue(status == AllianceModule.AllianceStatus.Active);
-        assertEq(alliance.getCommunityAlliances(communityAddr).length, 1);
-        assertEq(alliance.getCommunityAlliances(address(hostile)).length, 1);
+        assertTrue(status == AllianceModule.AllianceStatus.Proposed);
+        assertEq(alliance.getCommunityAlliances(communityAddr).length, 0);
+        assertEq(alliance.getCommunityAlliances(address(hostile)).length, 0);
+        assertFalse(alliance.isAllied(communityAddr, address(hostile)));
     }
 }

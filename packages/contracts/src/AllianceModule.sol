@@ -24,10 +24,11 @@ import {ReentrancyGuard} from "./utils/ReentrancyGuard.sol";
  *   - Accept / decline: founder of community B only
  *   - Dissolve: founder of A or B, and only from Active
  *   - Status: Proposed → Active | Dissolved; Active → Dissolved
- *   - `isFounder` / `initialized` are external calls on community contracts.
- *     Mutators are `nonReentrant` and re-check status after those calls so a
- *     hostile community cannot double-accept, accept-after-decline, or
- *     double-push `communityAlliances` via callback reentrancy.
+ *   - `Community.isFounder` / `initialized` are public getters, so calls from
+ *     this module are STATICCALLs. A hostile target can spoof those returns
+ *     but cannot write or reenter during the check. Mutators are still
+ *     `nonReentrant` and re-check status after the lookup as defense in
+ *     depth if a future community implementation is no longer view.
  */
 contract AllianceModule is ReentrancyGuard {
     // ─── Types ────────────────────────────────────────────────────────
@@ -100,8 +101,7 @@ contract AllianceModule is ReentrancyGuard {
 
         Community b = Community(a.communityB);
         require(b.isFounder(msg.sender), "Only target founders can accept");
-        // Re-check after the external call: a hostile communityB.isFounder
-        // must not accept, decline, or dissolve this id mid-callback.
+        // Defense in depth if a future community `isFounder` is no longer view.
         require(a.status == AllianceStatus.Proposed, "Not proposed");
 
         a.status = AllianceStatus.Active;

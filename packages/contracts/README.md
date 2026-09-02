@@ -77,7 +77,7 @@ Focused guards added for the highest-risk paths (see [../../docs/CONTRACTS.md](.
 | `TokenModule.initialize` / bare `Community.initialize` frontrun | Deployer-only initializer (`deployer == msg.sender` at construction) |
 | Malicious ERC-20 reenters `distributeDividends` | `nonReentrant` + `outstandingShares` accounting + zero-address/amount checks |
 | Alliance / vote edge inputs | Zero-address + initialized community checks; reject unexpected ETH on free votes |
-| Hostile community reenters `accept`/`decline`/`dissolve` | `nonReentrant` + status re-check after `isFounder`; lists only pushed on accept |
+| Hostile community spoofs / callbacks on alliance checks | `isFounder`/`initialized` are view (STATICCALL); mutators still `nonReentrant` + status re-check |
 
 In-repo `src/utils/ReentrancyGuard.sol` (OZ-style) avoids a full OpenZeppelin submodule for a single primitive.
 
