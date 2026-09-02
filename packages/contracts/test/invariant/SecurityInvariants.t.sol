@@ -8,10 +8,13 @@ import {GovernanceModule} from "../../src/GovernanceModule.sol";
 import {TokenModule} from "../../src/TokenModule.sol";
 import {InstitutionRegistry} from "../../src/InstitutionRegistry.sol";
 
+import {AllianceModule} from "../../src/AllianceModule.sol";
+
 import {GovernanceHandler} from "./handlers/GovernanceHandler.sol";
 import {TokenHandler} from "./handlers/TokenHandler.sol";
 import {MembershipHandler} from "./handlers/MembershipHandler.sol";
 import {DividendHandler} from "./handlers/DividendHandler.sol";
+import {AllianceHandler} from "./handlers/AllianceHandler.sol";
 
 /**
  * @title GovernanceInvariants
@@ -438,6 +441,207 @@ contract DividendInvariants is Test {
 }
 
 /**
+ * @title AllianceInvariants
+ * @notice Access control, status machine, spoofing, ETH, and list-accounting
+ *         properties for AllianceModule.
+ *
+ * Properties:
+ *  1. Only founder of A can propose; only founder of B can accept/decline;
+ *     only founder of A or B can dissolve.
+ *  2. Status may only move Proposed → Active | Dissolved, Active → Dissolved.
+ *     No double-accept / double-dissolve / skip transitions.
+ *  3. A founder of community C cannot accept/decline an A–B alliance.
+ *  4. Module rejects unexpected ETH (no payable / receive path).
+ *  5. communityAlliances lists match accepted (ever-Active) ids: no declined
+ *     phantoms, no duplicates, and isAllied iff an Active pair exists.
+ */
+contract AllianceInvariants is Test {
+    CommunityFactory internal factory;
+    AllianceModule internal alliance;
+    AllianceHandler internal handler;
+
+    address internal founderA = makeAddr("ally-founder-a");
+    address internal founderB = makeAddr("ally-founder-b");
+    address internal founderC = makeAddr("ally-founder-c");
+    address internal memberA = makeAddr("ally-member-a");
+    address internal memberB = makeAddr("ally-member-b");
+    address internal outsider = makeAddr("ally-outsider");
+
+    address internal commA;
+    address internal commB;
+    address internal commC;
+
+    function setUp() public {
+        factory = new CommunityFactory();
+        alliance = new AllianceModule();
+
+        Community.Bylaws memory bylaws = Community.Bylaws({
+            admissionRule: Community.MemberAdmission.FoundersAndMembers,
+            exileRule: Community.MemberAdmission.FoundersOnly,
+            voteThreshold: Community.VoteThreshold.Majority,
+            votePercentage: 51,
+            whoMayPropose: Community.ProposalPermission.FoundersOrMembers,
+            requireBuyIn: false
+        });
+
+        address[] memory foundersA = new address[](1);
+        foundersA[0] = founderA;
+        address[] memory foundersB = new address[](1);
+        foundersB[0] = founderB;
+        address[] memory foundersC = new address[](1);
+        foundersC[0] = founderC;
+
+        commA = factory.createCommunity("Ally A", "", foundersA, bylaws, "", "", false);
+        commB = factory.createCommunity("Ally B", "", foundersB, bylaws, "", "", false);
+        commC = factory.createCommunity("Ally C", "", foundersC, bylaws, "", "", false);
+
+        vm.prank(founderA);
+        Community(commA).addMember(memberA);
+        vm.prank(founderB);
+        Community(commB).addMember(memberB);
+
+        address[] memory actors = new address[](6);
+        actors[0] = founderA;
+        actors[1] = founderB;
+        actors[2] = founderC;
+        actors[3] = memberA;
+        actors[4] = memberB;
+        actors[5] = outsider;
+
+        handler = new AllianceHandler(
+            alliance, commA, commB, commC, founderA, founderB, founderC, actors
+        );
+
+        targetContract(address(handler));
+
+        bytes4[] memory selectors = new bytes4[](10);
+        selectors[0] = AllianceHandler.proposeAsFounder.selector;
+        selectors[1] = AllianceHandler.acceptAsTarget.selector;
+        selectors[2] = AllianceHandler.declineAsTarget.selector;
+        selectors[3] = AllianceHandler.dissolveAsPartyFounder.selector;
+        selectors[4] = AllianceHandler.proposeUnauthorized.selector;
+        selectors[5] = AllianceHandler.acceptAsSpoof.selector;
+        selectors[6] = AllianceHandler.declineAsSpoof.selector;
+        selectors[7] = AllianceHandler.dissolveAsSpoof.selector;
+        selectors[8] = AllianceHandler.proposeInvalid.selector;
+        selectors[9] = AllianceHandler.trySendEth.selector;
+        targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
+    }
+
+    function invariant_onlyAuthorizedActors() public view {
+        assertEq(handler.unauthorizedProposeSucceeded(), 0, "unauthorized propose");
+        assertEq(handler.unauthorizedAcceptSucceeded(), 0, "unauthorized accept");
+        assertEq(handler.unauthorizedDeclineSucceeded(), 0, "unauthorized decline");
+        assertEq(handler.unauthorizedDissolveSucceeded(), 0, "unauthorized dissolve");
+        assertEq(handler.selfAllianceSucceeded(), 0, "self-alliance succeeded");
+        assertEq(handler.invalidCommunitySucceeded(), 0, "zero/uninit community succeeded");
+    }
+
+    function invariant_statusMachine() public view {
+        assertEq(handler.illegalTransitions(), 0, "illegal alliance status transition");
+        assertEq(handler.doubleAcceptSucceeded(), 0, "double-accept succeeded");
+        assertEq(handler.doubleDissolveSucceeded(), 0, "double-dissolve succeeded");
+
+        uint256 n = alliance.nextAllianceId();
+        for (uint256 id = 0; id < n; id++) {
+            (address ca, address cb, AllianceModule.AllianceStatus status,,,) =
+                alliance.getAlliance(id);
+            assertTrue(ca != address(0) && cb != address(0), "empty alliance slot");
+            assertTrue(ca != cb, "self-pair stored");
+            if (status == AllianceModule.AllianceStatus.Active) {
+                assertTrue(handler.everActive(id), "active without recorded accept");
+                assertTrue(handler.everProposed(id) || handler.seen(id), "active unseen");
+            }
+            if (status == AllianceModule.AllianceStatus.Dissolved && handler.everActive(id)) {
+                assertTrue(
+                    handler.lastStatus(id) == AllianceModule.AllianceStatus.Dissolved
+                        || handler.lastStatus(id) == AllianceModule.AllianceStatus.Active,
+                    "dissolved-after-active ghost mismatch"
+                );
+            }
+        }
+    }
+
+    function invariant_noCrossCommunitySpoof() public view {
+        assertEq(handler.crossCommunityAcceptSucceeded(), 0, "cross-community accept spoof");
+    }
+
+    function invariant_noUnexpectedEth() public view {
+        assertEq(address(alliance).balance, 0, "alliance holds ETH");
+        assertEq(handler.unexpectedEthAccepted(), 0, "unexpected ETH accepted");
+    }
+
+    function invariant_enumerationAndIsAllied() public view {
+        _assertPairwiseAllied();
+        _assertCommunityList(commA);
+        _assertCommunityList(commB);
+        _assertCommunityList(commC);
+    }
+
+    function _assertPairwiseAllied() internal view {
+        address[3] memory comms = [commA, commB, commC];
+        for (uint256 i = 0; i < 3; i++) {
+            for (uint256 j = 0; j < 3; j++) {
+                if (i == j) {
+                    assertFalse(alliance.isAllied(comms[i], comms[j]), "self allied");
+                    continue;
+                }
+                assertEq(
+                    alliance.isAllied(comms[i], comms[j]),
+                    handler.hasActiveAlliance(comms[i], comms[j]),
+                    "isAllied != active pair scan"
+                );
+            }
+        }
+    }
+
+    function _assertCommunityList(address community) internal view {
+        uint256[] memory list = alliance.getCommunityAlliances(community);
+        assertEq(list.length, handler.acceptedCountFor(community), "list length != accepted");
+
+        uint256 n = alliance.nextAllianceId();
+        for (uint256 id = 0; id < n; id++) {
+            (address ca, address cb, AllianceModule.AllianceStatus status,,,) =
+                alliance.getAlliance(id);
+            bool party = ca == community || cb == community;
+            if (party && !handler.everActive(id)) {
+                for (uint256 k = 0; k < list.length; k++) {
+                    assertTrue(list[k] != id, "declined/unaccepted id in community list");
+                }
+                if (status == AllianceModule.AllianceStatus.Proposed) {
+                    assertFalse(alliance.isAllied(ca, cb) && !_otherActivePair(ca, cb, id));
+                }
+            }
+        }
+
+        for (uint256 i = 0; i < list.length; i++) {
+            (address ca, address cb,, ,,) = alliance.getAlliance(list[i]);
+            assertTrue(ca == community || cb == community, "foreign id in community list");
+            assertTrue(handler.everActive(list[i]), "phantom list entry");
+            for (uint256 j = i + 1; j < list.length; j++) {
+                assertTrue(list[i] != list[j], "duplicate alliance id in list");
+            }
+        }
+    }
+
+    function _otherActivePair(address ca, address cb, uint256 exceptId)
+        internal
+        view
+        returns (bool)
+    {
+        uint256 n = alliance.nextAllianceId();
+        for (uint256 id = 0; id < n; id++) {
+            if (id == exceptId) continue;
+            (address xa, address xb, AllianceModule.AllianceStatus status,,,) =
+                alliance.getAlliance(id);
+            if (status != AllianceModule.AllianceStatus.Active) continue;
+            if ((xa == ca && xb == cb) || (xa == cb && xb == ca)) return true;
+        }
+        return false;
+    }
+}
+
+/**
  * @title StatelessFuzzSecurity
  * @notice Complementary fuzz tests for properties that are cheaper as unit fuzzes.
  */
@@ -559,6 +763,53 @@ contract StatelessFuzzSecurity is Test {
         vm.prank(caller);
         vm.expectRevert();
         Community(communityAddr).removeMember(alice);
+    }
+
+    function testFuzz_allianceOnlyFounderOfACanPropose(address caller) public {
+        vm.assume(caller != address(0));
+        vm.assume(caller != alice);
+
+        address[] memory foundersB = new address[](1);
+        foundersB[0] = bob;
+        Community.Bylaws memory bylaws = Community.Bylaws({
+            admissionRule: Community.MemberAdmission.FoundersAndMembers,
+            exileRule: Community.MemberAdmission.FoundersOnly,
+            voteThreshold: Community.VoteThreshold.Majority,
+            votePercentage: 51,
+            whoMayPropose: Community.ProposalPermission.FoundersOrMembers,
+            requireBuyIn: false
+        });
+        address commB = factory.createCommunity("FuzzB", "", foundersB, bylaws, "", "", false);
+
+        AllianceModule am = new AllianceModule();
+        vm.prank(caller);
+        vm.expectRevert("Only founders can propose alliances");
+        am.proposeAlliance(communityAddr, commB, "", 0, false, false);
+    }
+
+    function testFuzz_allianceOnlyTargetFounderCanAccept(address caller) public {
+        vm.assume(caller != address(0));
+        vm.assume(caller != bob);
+
+        address[] memory foundersB = new address[](1);
+        foundersB[0] = bob;
+        Community.Bylaws memory bylaws = Community.Bylaws({
+            admissionRule: Community.MemberAdmission.FoundersAndMembers,
+            exileRule: Community.MemberAdmission.FoundersOnly,
+            voteThreshold: Community.VoteThreshold.Majority,
+            votePercentage: 51,
+            whoMayPropose: Community.ProposalPermission.FoundersOrMembers,
+            requireBuyIn: false
+        });
+        address commB = factory.createCommunity("FuzzB2", "", foundersB, bylaws, "", "", false);
+
+        AllianceModule am = new AllianceModule();
+        vm.prank(alice);
+        uint256 id = am.proposeAlliance(communityAddr, commB, "", 0, false, false);
+
+        vm.prank(caller);
+        vm.expectRevert("Only target founders can accept");
+        am.acceptAlliance(id);
     }
 
     function testFuzz_refundNoDoubleClaim() public {
