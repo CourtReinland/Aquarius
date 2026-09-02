@@ -140,6 +140,59 @@ contract ReentrantDividendToken {
     }
 }
 
+/// @dev Fake community used to probe AllianceModule callback reentrancy.
+///      `initialized()` / `isFounder()` look like Community; isFounder can
+///      reenter accept or decline on the same alliance id.
+contract ReentrantAllianceCommunity {
+    AllianceModule public alliance;
+    uint256 public attackId;
+    uint256 public reenterAttempts;
+    uint256 public reenterSucceeded;
+
+    enum Attack {
+        None,
+        ReenterAccept,
+        ReenterDeclineDuringAccept
+    }
+
+    Attack public attack;
+
+    function initialized() external pure returns (bool) {
+        return true;
+    }
+
+    function configure(AllianceModule _alliance) external {
+        alliance = _alliance;
+    }
+
+    function enableAcceptReenter(uint256 id) external {
+        attackId = id;
+        attack = Attack.ReenterAccept;
+    }
+
+    function enableDeclineDuringAccept(uint256 id) external {
+        attackId = id;
+        attack = Attack.ReenterDeclineDuringAccept;
+    }
+
+    function isFounder(address) external returns (bool) {
+        if (attack == Attack.ReenterAccept) {
+            attack = Attack.None;
+            reenterAttempts++;
+            try alliance.acceptAlliance(attackId) {
+                reenterSucceeded++;
+            } catch {}
+        } else if (attack == Attack.ReenterDeclineDuringAccept) {
+            attack = Attack.None;
+            reenterAttempts++;
+            try alliance.declineAlliance(attackId) {
+                reenterSucceeded++;
+            } catch {}
+        }
+        return true;
+    }
+}
+
 contract SecurityHardeningTest is Test {
     CommunityFactory public factory;
     GovernanceModule public governance;
@@ -464,5 +517,251 @@ contract SecurityHardeningTest is Test {
         vm.prank(alice);
         vm.expectRevert("Amount required");
         registry.distributeDividends(instId, address(0xBEEF), 0);
+    }
+
+    // ─── 7. AllianceModule access / status / spoof / callback ─────────
+
+    function _createCommunity(address founder, string memory name) internal returns (address) {
+        address[] memory founders = new address[](1);
+        founders[0] = founder;
+        Community.Bylaws memory bylaws = Community.Bylaws({
+            admissionRule: Community.MemberAdmission.FoundersAndMembers,
+            exileRule: Community.MemberAdmission.FoundersOnly,
+            voteThreshold: Community.VoteThreshold.Majority,
+            votePercentage: 51,
+            whoMayPropose: Community.ProposalPermission.FoundersOrMembers,
+            requireBuyIn: false
+        });
+        return factory.createCommunity(name, "", founders, bylaws, "", "", false);
+    }
+
+    function test_AllianceRejectsSelfAlliance() public {
+        vm.prank(alice);
+        vm.expectRevert("Cannot ally with self");
+        alliance.proposeAlliance(communityAddr, communityAddr, "self", 0, false, false);
+    }
+
+    function test_AllianceFounderBCannotProposeAsA() public {
+        address commB = _createCommunity(bob, "Target B");
+        vm.prank(bob);
+        vm.expectRevert("Only founders can propose alliances");
+        alliance.proposeAlliance(communityAddr, commB, "", 0, false, false);
+    }
+
+    function test_AllianceMemberCannotPropose() public {
+        address commB = _createCommunity(makeAddr("founderB2"), "Target B");
+        vm.prank(charlie); // member of A, not a founder
+        vm.expectRevert("Only founders can propose alliances");
+        alliance.proposeAlliance(communityAddr, commB, "", 0, false, false);
+    }
+
+    function test_AllianceDoubleAcceptReverts() public {
+        address commB = _createCommunity(bob, "Target B");
+        vm.prank(alice);
+        uint256 id = alliance.proposeAlliance(communityAddr, commB, "", 0, true, false);
+
+        vm.prank(bob);
+        alliance.acceptAlliance(id);
+
+        vm.prank(bob);
+        vm.expectRevert("Not proposed");
+        alliance.acceptAlliance(id);
+    }
+
+    function test_AllianceDoubleDissolveReverts() public {
+        address commB = _createCommunity(bob, "Target B");
+        vm.prank(alice);
+        uint256 id = alliance.proposeAlliance(communityAddr, commB, "", 0, true, false);
+        vm.prank(bob);
+        alliance.acceptAlliance(id);
+
+        vm.prank(alice);
+        alliance.dissolveAlliance(id);
+
+        vm.prank(bob);
+        vm.expectRevert("Not active");
+        alliance.dissolveAlliance(id);
+    }
+
+    function test_AllianceCannotDissolveWhenProposed() public {
+        address commB = _createCommunity(bob, "Target B");
+        vm.prank(alice);
+        uint256 id = alliance.proposeAlliance(communityAddr, commB, "", 0, true, false);
+
+        vm.prank(alice);
+        vm.expectRevert("Not active");
+        alliance.dissolveAlliance(id);
+    }
+
+    function test_AllianceCannotAcceptAfterDecline() public {
+        address commB = _createCommunity(bob, "Target B");
+        vm.prank(alice);
+        uint256 id = alliance.proposeAlliance(communityAddr, commB, "", 0, true, false);
+
+        vm.prank(bob);
+        alliance.declineAlliance(id);
+
+        vm.prank(bob);
+        vm.expectRevert("Not proposed");
+        alliance.acceptAlliance(id);
+
+        assertFalse(alliance.isAllied(communityAddr, commB));
+        assertEq(alliance.getCommunityAlliances(communityAddr).length, 0);
+        assertEq(alliance.getCommunityAlliances(commB).length, 0);
+    }
+
+    function test_AllianceCannotDeclineWhenActive() public {
+        address commB = _createCommunity(bob, "Target B");
+        vm.prank(alice);
+        uint256 id = alliance.proposeAlliance(communityAddr, commB, "", 0, true, false);
+        vm.prank(bob);
+        alliance.acceptAlliance(id);
+
+        vm.prank(bob);
+        vm.expectRevert("Not proposed");
+        alliance.declineAlliance(id);
+    }
+
+    function test_AllianceFounderCCannotAcceptOrDeclineAB() public {
+        address commB = _createCommunity(bob, "Target B");
+        address commC = _createCommunity(charlie, "Spoof C");
+
+        vm.prank(alice);
+        uint256 id = alliance.proposeAlliance(communityAddr, commB, "", 0, true, false);
+
+        vm.prank(charlie);
+        vm.expectRevert("Only target founders can accept");
+        alliance.acceptAlliance(id);
+
+        vm.prank(charlie);
+        vm.expectRevert("Only target founders can decline");
+        alliance.declineAlliance(id);
+
+        // Charlie also cannot dissolve a later active A–B alliance
+        vm.prank(bob);
+        alliance.acceptAlliance(id);
+        vm.prank(charlie);
+        vm.expectRevert("Only founders can dissolve");
+        alliance.dissolveAlliance(id);
+        assertTrue(alliance.isAllied(communityAddr, commB));
+        assertFalse(alliance.isAllied(communityAddr, commC));
+    }
+
+    function test_AllianceOutsiderCannotDeclineOrDissolve() public {
+        address commB = _createCommunity(bob, "Target B");
+        address outsider = makeAddr("allianceOutsider");
+
+        vm.prank(alice);
+        uint256 id = alliance.proposeAlliance(communityAddr, commB, "", 0, true, false);
+
+        vm.prank(outsider);
+        vm.expectRevert("Only target founders can decline");
+        alliance.declineAlliance(id);
+
+        vm.prank(bob);
+        alliance.acceptAlliance(id);
+
+        vm.prank(outsider);
+        vm.expectRevert("Only founders can dissolve");
+        alliance.dissolveAlliance(id);
+    }
+
+    function test_AllianceFounderACannotDecline() public {
+        address commB = _createCommunity(bob, "Target B");
+        vm.prank(alice);
+        uint256 id = alliance.proposeAlliance(communityAddr, commB, "", 0, true, false);
+
+        vm.prank(alice);
+        vm.expectRevert("Only target founders can decline");
+        alliance.declineAlliance(id);
+    }
+
+    function test_AllianceDissolveClearsIsAlliedButKeepsHistory() public {
+        address commB = _createCommunity(bob, "Target B");
+        vm.prank(alice);
+        uint256 id = alliance.proposeAlliance(communityAddr, commB, "", 0, true, false);
+        vm.prank(bob);
+        alliance.acceptAlliance(id);
+        assertTrue(alliance.isAllied(communityAddr, commB));
+
+        vm.prank(bob);
+        alliance.dissolveAlliance(id);
+
+        (,, AllianceModule.AllianceStatus status,,,) = alliance.getAlliance(id);
+        assertTrue(status == AllianceModule.AllianceStatus.Dissolved);
+        assertFalse(alliance.isAllied(communityAddr, commB));
+
+        uint256[] memory aList = alliance.getCommunityAlliances(communityAddr);
+        uint256[] memory bList = alliance.getCommunityAlliances(commB);
+        assertEq(aList.length, 1);
+        assertEq(bList.length, 1);
+        assertEq(aList[0], id);
+        assertEq(bList[0], id);
+    }
+
+    function test_AllianceRejectsUnexpectedETH() public {
+        address commB = _createCommunity(bob, "Target B");
+        vm.deal(alice, 1 ether);
+
+        vm.prank(alice);
+        (bool ok,) = address(alliance).call{value: 0.1 ether}(
+            abi.encodeWithSelector(
+                AllianceModule.proposeAlliance.selector,
+                communityAddr,
+                commB,
+                "",
+                uint256(0),
+                false,
+                false
+            )
+        );
+        assertFalse(ok, "payable propose should fail");
+
+        (bool okEmpty,) = address(alliance).call{value: 0.1 ether}("");
+        assertFalse(okEmpty, "plain ETH transfer should fail");
+        assertEq(address(alliance).balance, 0);
+    }
+
+    function test_AllianceAcceptReentrancyCannotDoublePush() public {
+        ReentrantAllianceCommunity hostile = new ReentrantAllianceCommunity();
+        hostile.configure(alliance);
+
+        vm.prank(alice);
+        uint256 id = alliance.proposeAlliance(communityAddr, address(hostile), "", 0, true, false);
+        hostile.enableAcceptReenter(id);
+
+        // Any caller is treated as founder of the hostile target.
+        alliance.acceptAlliance(id);
+
+        assertEq(hostile.reenterAttempts(), 1);
+        assertEq(hostile.reenterSucceeded(), 0);
+
+        (,, AllianceModule.AllianceStatus status,,,) = alliance.getAlliance(id);
+        assertTrue(status == AllianceModule.AllianceStatus.Active);
+
+        uint256[] memory aList = alliance.getCommunityAlliances(communityAddr);
+        uint256[] memory bList = alliance.getCommunityAlliances(address(hostile));
+        assertEq(aList.length, 1, "double-push on community A");
+        assertEq(bList.length, 1, "double-push on hostile B");
+        assertTrue(alliance.isAllied(communityAddr, address(hostile)));
+    }
+
+    function test_AllianceAcceptReentrancyCannotFlipDeclineToActive() public {
+        ReentrantAllianceCommunity hostile = new ReentrantAllianceCommunity();
+        hostile.configure(alliance);
+
+        vm.prank(alice);
+        uint256 id = alliance.proposeAlliance(communityAddr, address(hostile), "", 0, true, false);
+        hostile.enableDeclineDuringAccept(id);
+
+        alliance.acceptAlliance(id);
+
+        assertEq(hostile.reenterAttempts(), 1);
+        assertEq(hostile.reenterSucceeded(), 0);
+
+        (,, AllianceModule.AllianceStatus status,,,) = alliance.getAlliance(id);
+        assertTrue(status == AllianceModule.AllianceStatus.Active);
+        assertEq(alliance.getCommunityAlliances(communityAddr).length, 1);
+        assertEq(alliance.getCommunityAlliances(address(hostile)).length, 1);
     }
 }

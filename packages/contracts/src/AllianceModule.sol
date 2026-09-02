@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Community} from "./Community.sol";
+import {ReentrancyGuard} from "./utils/ReentrancyGuard.sol";
 
 /**
  * @title AllianceModule
@@ -17,8 +18,18 @@ import {Community} from "./Community.sol";
  *   2. Community B reviews and accepts/declines
  *   3. On accept: members of both communities gain specified benefits
  *   4. Either community can propose to dissolve the alliance
+ *
+ * Access / state-machine notes:
+ *   - Propose: founder of community A only
+ *   - Accept / decline: founder of community B only
+ *   - Dissolve: founder of A or B, and only from Active
+ *   - Status: Proposed → Active | Dissolved; Active → Dissolved
+ *   - `isFounder` / `initialized` are external calls on community contracts.
+ *     Mutators are `nonReentrant` and re-check status after those calls so a
+ *     hostile community cannot double-accept, accept-after-decline, or
+ *     double-push `communityAlliances` via callback reentrancy.
  */
-contract AllianceModule {
+contract AllianceModule is ReentrancyGuard {
     // ─── Types ────────────────────────────────────────────────────────
 
     enum AllianceStatus { Proposed, Active, Dissolved }
@@ -57,7 +68,7 @@ contract AllianceModule {
         uint256 _tokenGrantPerMember,
         bool _freeTravel,
         bool _votingRights
-    ) external returns (uint256 allianceId) {
+    ) external nonReentrant returns (uint256 allianceId) {
         require(_communityA != address(0) && _communityB != address(0), "Invalid community");
         require(_communityA != _communityB, "Cannot ally with self");
 
@@ -83,12 +94,15 @@ contract AllianceModule {
         emit AllianceProposed(allianceId, _communityA, _communityB);
     }
 
-    function acceptAlliance(uint256 _allianceId) external {
+    function acceptAlliance(uint256 _allianceId) external nonReentrant {
         Alliance storage a = alliances[_allianceId];
         require(a.status == AllianceStatus.Proposed, "Not proposed");
 
         Community b = Community(a.communityB);
         require(b.isFounder(msg.sender), "Only target founders can accept");
+        // Re-check after the external call: a hostile communityB.isFounder
+        // must not accept, decline, or dissolve this id mid-callback.
+        require(a.status == AllianceStatus.Proposed, "Not proposed");
 
         a.status = AllianceStatus.Active;
         communityAlliances[a.communityA].push(_allianceId);
@@ -97,18 +111,19 @@ contract AllianceModule {
         emit AllianceAccepted(_allianceId);
     }
 
-    function declineAlliance(uint256 _allianceId) external {
+    function declineAlliance(uint256 _allianceId) external nonReentrant {
         Alliance storage a = alliances[_allianceId];
         require(a.status == AllianceStatus.Proposed, "Not proposed");
 
         Community b = Community(a.communityB);
         require(b.isFounder(msg.sender), "Only target founders can decline");
+        require(a.status == AllianceStatus.Proposed, "Not proposed");
 
         a.status = AllianceStatus.Dissolved;
         emit AllianceDeclined(_allianceId);
     }
 
-    function dissolveAlliance(uint256 _allianceId) external {
+    function dissolveAlliance(uint256 _allianceId) external nonReentrant {
         Alliance storage a = alliances[_allianceId];
         require(a.status == AllianceStatus.Active, "Not active");
 
@@ -118,6 +133,7 @@ contract AllianceModule {
             commA.isFounder(msg.sender) || commB.isFounder(msg.sender),
             "Only founders can dissolve"
         );
+        require(a.status == AllianceStatus.Active, "Not active");
 
         a.status = AllianceStatus.Dissolved;
         emit AllianceDissolved(_allianceId, msg.sender);

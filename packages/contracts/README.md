@@ -29,7 +29,7 @@ The current suite covers:
 - Institution creation, shares, positions, dividends.
 - Alliance propose/accept/decline/dissolve flows.
 - Full Cincinnati Skateville E2E story.
-- Foundry invariant / fuzz campaigns under `test/invariant/` (refund conservation, status machine, mint bounds, membership, dividends).
+- Foundry invariant / fuzz campaigns under `test/invariant/` (refund conservation, status machine, mint bounds, membership, dividends, alliances).
 
 ### Invariant / fuzz tests
 
@@ -77,6 +77,7 @@ Focused guards added for the highest-risk paths (see [../../docs/CONTRACTS.md](.
 | `TokenModule.initialize` / bare `Community.initialize` frontrun | Deployer-only initializer (`deployer == msg.sender` at construction) |
 | Malicious ERC-20 reenters `distributeDividends` | `nonReentrant` + `outstandingShares` accounting + zero-address/amount checks |
 | Alliance / vote edge inputs | Zero-address + initialized community checks; reject unexpected ETH on free votes |
+| Hostile community reenters `accept`/`decline`/`dissolve` | `nonReentrant` + status re-check after `isFounder`; lists only pushed on accept |
 
 In-repo `src/utils/ReentrancyGuard.sol` (OZ-style) avoids a full OpenZeppelin submodule for a single primitive.
 
