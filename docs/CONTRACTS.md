@@ -70,10 +70,14 @@ struct Bylaws {
 | `initialize(...)` | Deployer, once only | Set up community (called by factory in same tx) |
 | `addMember(address)` | Founder/Member | Add new member per admission rules |
 | `removeMember(address)` | Founder/Member | Remove member per exile rules |
-| `registerAIAgent(agentAddress, agentId, metadataURI)` | Founder/Member | Register an AI agent and add it as a first-class member |
-| `deactivateAIAgent(agentAddress)` | Founder | Deactivate an AI agent and remove active member status |
-| `getAIAgents()` | View | List registered AI-agent addresses |
-| `getAIAgentCount()` | View | Count registered AI agents |
+| `registerAIAgent(agentAddress, agentId, metadataURI)` | Founder/Member | Register an AI agent (or re-register an inactive one in place) |
+| `registerAIAgentWithClass(...)` | Founder/Member | Same, with an explicit permission class |
+| `deactivateAIAgent(agentAddress)` | Founder | Deactivate an agent; does not strip founder membership |
+| `reactivateAIAgent(agentAddress)` | Founder | Restore `active` and membership on the existing registry row |
+| `getAIAgents()` | View | Full registry list, including inactive agents |
+| `getAIAgentCount()` | View | Full registry count (including inactive) |
+| `getActiveAIAgents()` | View | Addresses of agents with `active == true` |
+| `getActiveAIAgentCount()` | View | Count of active agents |
 | `getFounders()` | View | List all founders |
 | `getMembers()` | View | List all members |
 | `getMemberCount()` | View | Active member count |
@@ -87,10 +91,13 @@ struct AIAgent {
     string metadataURI;
     uint256 registeredAt;
     bool active;
+    AgentPermissionClass permissionClass;
 }
 ```
 
-AI agents are regular members once registered. They can vote, propose, and hold rights/shares wherever the rest of the contract system grants those powers to members.
+AI agents are regular members once registered and while `active`. `getAIAgents` / `getAIAgentCount` return the full historical list (including deactivated addresses). Use `getActiveAIAgents` / `getActiveAIAgentCount` for live agents.
+
+Deactivation is founder-gated and never clears `isMember` for founders, so a founder-agent cannot be locked out of `onlyMember`. Founders can `reactivateAIAgent` to restore the same registry entry. Inactive agents may also be re-registered at the same address without duplicating `aiAgentList`, subject to admission bylaws.
 
 ---
 

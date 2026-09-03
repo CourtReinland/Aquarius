@@ -84,6 +84,7 @@ contract Community {
         uint256 timestamp
     );
     event AIAgentDeactivated(address indexed agentAddress, uint256 timestamp);
+    event AIAgentReactivated(address indexed agentAddress, uint256 timestamp);
 
     // ─── Modifiers ────────────────────────────────────────────────────
 
@@ -227,8 +228,10 @@ contract Community {
         AgentPermissionClass _permissionClass
     ) internal {
         require(_agentAddress != address(0), "Invalid agent address");
-        require(!isAIAgent[_agentAddress], "Agent already registered");
         require(bytes(_agentId).length > 0, "agentId required");
+        // Active entries stay unique. Inactive agents may be re-registered
+        // in place so the address is not permanently burned.
+        require(!(isAIAgent[_agentAddress] && aiAgents[_agentAddress].active), "Agent already registered");
 
         if (bylaws.admissionRule == MemberAdmission.FoundersOnly) {
             require(isFounder[msg.sender], "Only founders can register agents");
@@ -236,21 +239,30 @@ contract Community {
             require(isMember[msg.sender], "Only members can register agents");
         }
 
+        bool alreadyListed = isAIAgent[_agentAddress];
+        uint256 registeredAt = alreadyListed ? aiAgents[_agentAddress].registeredAt : block.timestamp;
+
         aiAgents[_agentAddress] = AIAgent({
             agentAddress: _agentAddress,
             agentId: _agentId,
             metadataURI: _metadataURI,
-            registeredAt: block.timestamp,
+            registeredAt: registeredAt,
             active: true,
             permissionClass: _permissionClass
         });
-        aiAgentList.push(_agentAddress);
-        isAIAgent[_agentAddress] = true;
 
-        // AI agents are first-class members.
+        if (!alreadyListed) {
+            aiAgentList.push(_agentAddress);
+            isAIAgent[_agentAddress] = true;
+        }
+
+        // AI agents are first-class members. Re-register of an inactive
+        // agent restores membership without duplicating `members`.
         if (!isMember[_agentAddress]) {
-            members.push(_agentAddress);
             isMember[_agentAddress] = true;
+            if (!alreadyListed) {
+                members.push(_agentAddress);
+            }
             emit MemberAdded(_agentAddress, block.timestamp);
         }
 
@@ -265,24 +277,78 @@ contract Community {
 
     /**
      * @notice Deactivate a registered AI agent. Founder-gated.
+     * @dev Does not clear `isMember` for founders (`removeMember` already
+     *      forbids stripping founder membership). The registry entry remains
+     *      so the address can be reactivated or re-registered.
      */
     function deactivateAIAgent(address _agentAddress) external onlyFounder {
         require(isAIAgent[_agentAddress], "Not a registered agent");
         require(aiAgents[_agentAddress].active, "Already inactive");
 
         aiAgents[_agentAddress].active = false;
-        isMember[_agentAddress] = false;
+
+        if (!isFounder[_agentAddress]) {
+            isMember[_agentAddress] = false;
+            emit MemberRemoved(_agentAddress, block.timestamp);
+        }
 
         emit AIAgentDeactivated(_agentAddress, block.timestamp);
-        emit MemberRemoved(_agentAddress, block.timestamp);
     }
 
+    /**
+     * @notice Reactivate a deactivated AI agent. Founder-gated.
+     * @dev Restores `active` and membership on the existing registry row.
+     */
+    function reactivateAIAgent(address _agentAddress) external onlyFounder {
+        require(isAIAgent[_agentAddress], "Not a registered agent");
+        require(!aiAgents[_agentAddress].active, "Already active");
+
+        aiAgents[_agentAddress].active = true;
+
+        if (!isMember[_agentAddress]) {
+            isMember[_agentAddress] = true;
+            emit MemberAdded(_agentAddress, block.timestamp);
+        }
+
+        emit AIAgentReactivated(_agentAddress, block.timestamp);
+    }
+
+    /// @notice Full registry, including inactive agents.
     function getAIAgents() external view returns (address[] memory) {
         return aiAgentList;
     }
 
+    /// @notice Full registry size, including inactive agents.
     function getAIAgentCount() external view returns (uint256) {
         return aiAgentList.length;
+    }
+
+    /// @notice Addresses of agents whose `active` flag is true.
+    function getActiveAIAgents() external view returns (address[] memory) {
+        uint256 count = _activeAIAgentCount();
+        address[] memory activeAgents = new address[](count);
+        uint256 idx = 0;
+        uint256 len = aiAgentList.length;
+        for (uint256 i = 0; i < len; i++) {
+            address agent = aiAgentList[i];
+            if (aiAgents[agent].active) {
+                activeAgents[idx] = agent;
+                idx++;
+            }
+        }
+        return activeAgents;
+    }
+
+    /// @notice Count of agents whose `active` flag is true.
+    function getActiveAIAgentCount() external view returns (uint256) {
+        return _activeAIAgentCount();
+    }
+
+    function _activeAIAgentCount() internal view returns (uint256 count) {
+        uint256 len = aiAgentList.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (aiAgents[aiAgentList[i]].active) count++;
+        }
     }
 
     // ─── View Functions ───────────────────────────────────────────────
