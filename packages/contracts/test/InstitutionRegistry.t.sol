@@ -311,4 +311,283 @@ contract InstitutionRegistryTest is Test {
         (,,,,, address holder,) = registry.getPosition(bakerPos);
         assertEq(holder, bob);
     }
+
+    // ─── Authz (outsider / non-founder / wrong candidate) ─────────────
+
+    function _offeredPosition(address candidate, uint256 shareGrant)
+        internal
+        returns (uint256 instId, uint256 posId)
+    {
+        vm.prank(alice);
+        instId = registry.createInstitution(communityAddr, "Authz Shop", 100, true);
+        vm.prank(alice);
+        posId = registry.createPosition(instId, "Clerk", "Sell things", 100, shareGrant);
+        vm.prank(alice);
+        registry.offerPosition(posId, candidate);
+    }
+
+    function test_RevertNonFounderAllocateShares() public {
+        vm.prank(alice);
+        uint256 instId = registry.createInstitution(communityAddr, "Farm", 100, true);
+
+        vm.prank(bob);
+        vm.expectRevert("Only founders can allocate shares");
+        registry.allocateShares(instId, charlie, 10);
+
+        address outsider = makeAddr("outsider");
+        vm.prank(outsider);
+        vm.expectRevert("Only founders can allocate shares");
+        registry.allocateShares(instId, charlie, 10);
+    }
+
+    function test_RevertAllocateToNonMember() public {
+        vm.prank(alice);
+        uint256 instId = registry.createInstitution(communityAddr, "Farm", 100, true);
+
+        address outsider = makeAddr("outsider");
+        vm.prank(alice);
+        vm.expectRevert("Recipient must be member");
+        registry.allocateShares(instId, outsider, 10);
+    }
+
+    function test_RevertAllocateInactiveInstitution() public {
+        vm.prank(alice);
+        vm.expectRevert("Institution not active");
+        registry.allocateShares(999, bob, 10);
+    }
+
+    function test_RevertNonFounderCreatePosition() public {
+        vm.prank(alice);
+        uint256 instId = registry.createInstitution(communityAddr, "Gym", 40, false);
+
+        vm.prank(bob);
+        vm.expectRevert("Only founders can create positions");
+        registry.createPosition(instId, "Trainer", "Train", 250, 0);
+
+        address outsider = makeAddr("outsider");
+        vm.prank(outsider);
+        vm.expectRevert("Only founders can create positions");
+        registry.createPosition(instId, "Trainer", "Train", 250, 0);
+    }
+
+    function test_RevertNonFounderOfferPosition() public {
+        vm.prank(alice);
+        uint256 instId = registry.createInstitution(communityAddr, "Gym", 40, false);
+        vm.prank(alice);
+        uint256 posId = registry.createPosition(instId, "Trainer", "Train", 250, 0);
+
+        vm.prank(bob);
+        vm.expectRevert("Only founders can offer positions");
+        registry.offerPosition(posId, charlie);
+
+        address outsider = makeAddr("outsider");
+        vm.prank(outsider);
+        vm.expectRevert("Only founders can offer positions");
+        registry.offerPosition(posId, charlie);
+    }
+
+    function test_RevertOfferToNonMember() public {
+        vm.prank(alice);
+        uint256 instId = registry.createInstitution(communityAddr, "Gym", 40, false);
+        vm.prank(alice);
+        uint256 posId = registry.createPosition(instId, "Trainer", "Train", 250, 0);
+
+        address outsider = makeAddr("outsider");
+        vm.prank(alice);
+        vm.expectRevert("Candidate must be member");
+        registry.offerPosition(posId, outsider);
+    }
+
+    function test_RevertDeclineByWrongCandidate() public {
+        (, uint256 posId) = _offeredPosition(bob, 0);
+
+        vm.prank(charlie);
+        vm.expectRevert("Not offered to you");
+        registry.declinePosition(posId);
+
+        address outsider = makeAddr("outsider");
+        vm.prank(outsider);
+        vm.expectRevert("Not offered to you");
+        registry.declinePosition(posId);
+    }
+
+    function test_RevertVacateByNonHolder() public {
+        (, uint256 posId) = _offeredPosition(bob, 0);
+        vm.prank(bob);
+        registry.acceptPosition(posId);
+
+        vm.prank(charlie);
+        vm.expectRevert("Not the position holder");
+        registry.vacatePosition(posId);
+
+        address outsider = makeAddr("outsider");
+        vm.prank(outsider);
+        vm.expectRevert("Not the position holder");
+        registry.vacatePosition(posId);
+    }
+
+    // ─── Position state machine ───────────────────────────────────────
+
+    function test_RevertDoubleAccept() public {
+        (, uint256 posId) = _offeredPosition(bob, 0);
+        vm.prank(bob);
+        registry.acceptPosition(posId);
+
+        vm.prank(bob);
+        vm.expectRevert("Not offered to you");
+        registry.acceptPosition(posId);
+    }
+
+    function test_RevertDeclineAfterAccept() public {
+        (, uint256 posId) = _offeredPosition(bob, 0);
+        vm.prank(bob);
+        registry.acceptPosition(posId);
+
+        vm.prank(bob);
+        vm.expectRevert("Not offered to you");
+        registry.declinePosition(posId);
+    }
+
+    function test_RevertAcceptAfterDecline() public {
+        (, uint256 posId) = _offeredPosition(bob, 0);
+        vm.prank(bob);
+        registry.declinePosition(posId);
+
+        vm.prank(bob);
+        vm.expectRevert("Not offered to you");
+        registry.acceptPosition(posId);
+    }
+
+    function test_ReofferReplacesPendingCandidate() public {
+        (, uint256 posId) = _offeredPosition(bob, 0);
+
+        vm.prank(alice);
+        registry.offerPosition(posId, charlie);
+        assertEq(registry.getPendingAssignment(posId), charlie);
+
+        vm.prank(bob);
+        vm.expectRevert("Not offered to you");
+        registry.acceptPosition(posId);
+
+        vm.prank(charlie);
+        registry.acceptPosition(posId);
+        (,,,,, address holder,) = registry.getPosition(posId);
+        assertEq(holder, charlie);
+    }
+
+    function test_RevertAcceptAfterExile() public {
+        (uint256 instId, uint256 posId) = _offeredPosition(bob, 5);
+
+        vm.prank(alice);
+        Community(communityAddr).removeMember(bob);
+        assertFalse(Community(communityAddr).isMember(bob));
+
+        vm.prank(bob);
+        vm.expectRevert("Must be a member");
+        registry.acceptPosition(posId);
+
+        assertTrue(registry.isPositionVacant(posId));
+        assertEq(registry.getPendingAssignment(posId), bob);
+        assertEq(registry.getMemberShares(instId, bob), 0);
+        assertEq(registry.outstandingShares(instId), 0);
+    }
+
+    function test_ExiledHolderCanVacate() public {
+        (, uint256 posId) = _offeredPosition(bob, 0);
+        vm.prank(bob);
+        registry.acceptPosition(posId);
+
+        vm.prank(alice);
+        Community(communityAddr).removeMember(bob);
+
+        vm.prank(bob);
+        registry.vacatePosition(posId);
+        assertTrue(registry.isPositionVacant(posId));
+    }
+
+    // ─── Share accounting ─────────────────────────────────────────────
+
+    function test_RepeatAllocateDoesNotDuplicateShareholder() public {
+        vm.prank(alice);
+        uint256 instId = registry.createInstitution(communityAddr, "Mill", 100, true);
+
+        vm.startPrank(alice);
+        registry.allocateShares(instId, bob, 10);
+        registry.allocateShares(instId, bob, 15);
+        vm.stopPrank();
+
+        assertEq(registry.getShareholderCount(instId), 1);
+        assertEq(registry.getMemberShares(instId, bob), 25);
+        assertEq(registry.outstandingShares(instId), 25);
+        assertEq(registry.institutionShareholders(instId, 0), bob);
+    }
+
+    function test_OutstandingSharesTracksAllocationsAndPositionGrants() public {
+        vm.prank(alice);
+        uint256 instId = registry.createInstitution(communityAddr, "Mill", 100, true);
+
+        vm.startPrank(alice);
+        registry.allocateShares(instId, alice, 40);
+        registry.allocateShares(instId, bob, 20);
+        uint256 posId = registry.createPosition(instId, "Miller", "Mill grain", 0, 7);
+        registry.offerPosition(posId, charlie);
+        vm.stopPrank();
+
+        vm.prank(charlie);
+        registry.acceptPosition(posId);
+
+        uint256 sum = registry.getMemberShares(instId, alice)
+            + registry.getMemberShares(instId, bob)
+            + registry.getMemberShares(instId, charlie);
+        assertEq(sum, 67);
+        assertEq(registry.outstandingShares(instId), 67);
+        assertEq(registry.getShareholderCount(instId), 3);
+    }
+
+    function test_ReacceptAfterVacateGrantsAgain() public {
+        // Current product behavior: shareGrant is applied on every accept.
+        // Not treated as drift — outstandingShares stays coherent with balances.
+        (uint256 instId, uint256 posId) = _offeredPosition(bob, 5);
+
+        vm.prank(bob);
+        registry.acceptPosition(posId);
+        vm.prank(bob);
+        registry.vacatePosition(posId);
+
+        vm.prank(alice);
+        registry.offerPosition(posId, bob);
+        vm.prank(bob);
+        registry.acceptPosition(posId);
+
+        assertEq(registry.getMemberShares(instId, bob), 10);
+        assertEq(registry.outstandingShares(instId), 10);
+        assertEq(registry.getShareholderCount(instId), 1);
+    }
+
+    function test_ExiledMemberKeepsExistingShares() public {
+        vm.prank(alice);
+        uint256 instId = registry.createInstitution(communityAddr, "Mill", 100, true);
+        vm.prank(alice);
+        registry.allocateShares(instId, bob, 12);
+
+        vm.prank(alice);
+        Community(communityAddr).removeMember(bob);
+
+        assertEq(registry.getMemberShares(instId, bob), 12);
+        assertEq(registry.outstandingShares(instId), 12);
+
+        vm.prank(alice);
+        vm.expectRevert("Recipient must be member");
+        registry.allocateShares(instId, bob, 1);
+    }
+
+    // ─── ETH / payable-adjacent ───────────────────────────────────────
+
+    function test_RegistryRejectsPlainETH() public {
+        vm.deal(alice, 1 ether);
+        vm.prank(alice);
+        (bool ok,) = address(registry).call{value: 1 ether}("");
+        assertFalse(ok);
+        assertEq(address(registry).balance, 0);
+    }
 }
