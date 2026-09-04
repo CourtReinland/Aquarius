@@ -242,12 +242,16 @@ contract InstitutionRegistry is ReentrancyGuard {
     }
 
     /**
-     * @notice Accept a position offer. Only the offered candidate can accept.
+     * @notice Accept a position offer. Only the offered candidate can accept,
+     *         and they must still be a community member (exile closes the offer).
      */
     function acceptPosition(uint256 _positionId) external {
         require(pendingAssignments[_positionId] == msg.sender, "Not offered to you");
 
         Position storage pos = positions[_positionId];
+        Institution storage inst = institutions[pos.institutionId];
+        require(Community(inst.community).isMember(msg.sender), "Must be a member");
+
         pos.holder = msg.sender;
         delete pendingAssignments[_positionId];
 
